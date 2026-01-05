@@ -810,19 +810,24 @@ def pagina_dashboard_executivo(dados, filtros):
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric("Empresas Monitoradas", f"{kpis['total_empresas']:,}")
-    
+        st.metric("Empresas Monitoradas", f"{kpis['total_empresas']:,}",
+                 help="Total de empresas com saldo credor de ICMS na base de dados, após aplicação dos filtros selecionados")
+
     with col2:
-        st.metric("Grupos Econômicos", f"{kpis['total_grupos']:,}")
-    
+        st.metric("Grupos Econômicos", f"{kpis['total_grupos']:,}",
+                 help="Quantidade de grupos econômicos distintos identificados pelo CNPJ raiz das empresas")
+
     with col3:
-        st.metric("Saldo Credor Total", f"R$ {kpis['saldo_total']/1e9:.2f}B")
-    
+        st.metric("Saldo Credor Total", f"R$ {kpis['saldo_total']/1e9:.2f}B",
+                 help="Soma de todos os saldos credores de ICMS acumulados pelas empresas filtradas")
+
     with col4:
-        st.metric("Score Médio", f"{kpis['score_medio']:.1f}")
-    
+        st.metric("Score Médio", f"{kpis['score_medio']:.1f}",
+                 help="Média do score de risco calculado para as empresas. Quanto maior, maior o risco de irregularidade")
+
     with col5:
-        st.metric("Casos Críticos", f"{kpis['criticos']:,}", delta=f"{kpis['altos']:,} altos")
+        st.metric("Casos Críticos", f"{kpis['criticos']:,}", delta=f"{kpis['altos']:,} altos",
+                 help="Empresas classificadas como CRÍTICO (maior risco). O delta mostra quantas estão classificadas como ALTO")
     
     # Segunda linha - KPIs CONTEXTUAIS
     st.subheader(f"{contexto_info['icon']} Indicadores Contextuais")
@@ -832,150 +837,170 @@ def pagina_dashboard_executivo(dados, filtros):
         
         with col1:
             qtd_6m_parado = len(df_filtrado[df_filtrado['qtde_ultimos_12m_iguais'] >= 6])
-            st.metric("6+ Meses Parado", f"{qtd_6m_parado:,}", 
+            st.metric("6+ Meses Parado", f"{qtd_6m_parado:,}",
                      delta=f"{qtd_6m_parado/kpis['total_empresas']*100:.1f}%" if kpis['total_empresas'] > 0 else "0%",
-                     delta_color="inverse")
-        
+                     delta_color="inverse",
+                     help="Empresas com saldo credor inalterado por 6 ou mais meses consecutivos, indicando possível inatividade operacional")
+
         with col2:
             if 'flag_tem_omissoes' in df_filtrado.columns:
                 qtd_omissas = len(df_filtrado[df_filtrado['flag_tem_omissoes'] == 1])
-                st.metric("Com Omissões", f"{qtd_omissas:,}", delta_color="inverse")
+                st.metric("Com Omissões", f"{qtd_omissas:,}", delta_color="inverse",
+                         help="Empresas que possuem omissão de declarações obrigatórias (DIME ou PGDAS)")
             else:
-                st.metric("Com Omissões", "N/A")
-        
+                st.metric("Com Omissões", "N/A", help="Dados de omissões não disponíveis na base atual")
+
         with col3:
             if 'flag_tem_declaracoes_zeradas' in df_filtrado.columns:
                 qtd_zer = len(df_filtrado[df_filtrado['flag_tem_declaracoes_zeradas'] == 1])
-                st.metric("Decl. Zeradas", f"{qtd_zer:,}", delta_color="inverse")
+                st.metric("Decl. Zeradas", f"{qtd_zer:,}", delta_color="inverse",
+                         help="Empresas que apresentaram declarações com valores zerados, podendo indicar subfaturamento")
             else:
-                st.metric("Decl. Zeradas", "N/A")
-        
+                st.metric("Decl. Zeradas", "N/A", help="Dados de declarações zeradas não disponíveis na base atual")
+
         with col4:
             if 'sn_cancelado_inex_inativ' in df_filtrado.columns:
                 qtd_canc = len(df_filtrado[df_filtrado['sn_cancelado_inex_inativ'] == 1])
-                st.metric("Canceladas/Inex", f"{qtd_canc:,}", delta_color="inverse")
+                st.metric("Canceladas/Inex", f"{qtd_canc:,}", delta_color="inverse",
+                         help="Empresas com situação cadastral cancelada, inexistente ou inativa que mantêm saldo credor")
             else:
-                st.metric("Canceladas/Inex", "N/A")
-        
+                st.metric("Canceladas/Inex", "N/A", help="Dados de situação cadastral não disponíveis na base atual")
+
         with col5:
             if 'flag_cancelamento' in df_filtrado.columns:
                 candidatas = len(df_filtrado[df_filtrado['flag_cancelamento'] == True])
                 st.metric("Candidatas ao Cancel.", f"{candidatas:,}",
-                         delta=f"{candidatas/kpis['total_empresas']*100:.1f}%" if kpis['total_empresas'] > 0 else "0%")
+                         delta=f"{candidatas/kpis['total_empresas']*100:.1f}%" if kpis['total_empresas'] > 0 else "0%",
+                         help="Empresas que atendem aos critérios para cancelamento de IE: 6+ meses paradas, omissões ou declarações zeradas")
             else:
-                st.metric("Candidatas ao Cancel.", "N/A")
+                st.metric("Candidatas ao Cancel.", "N/A", help="Flag de cancelamento não calculada")
     
     elif contexto == 'saldos_credores':
         col1, col2, col3, col4, col5 = st.columns(5)
-        
+
         with col1:
             alto_estag = len(df_filtrado[
-                (df_filtrado['saldo_credor_atual'] > 50000) & 
+                (df_filtrado['saldo_credor_atual'] > 50000) &
                 (df_filtrado['qtde_ultimos_12m_iguais'] >= 6)
             ])
-            st.metric("Alto Saldo + Estagnado", f"{alto_estag:,}", delta_color="inverse")
-        
+            st.metric("Alto Saldo + Estagnado", f"{alto_estag:,}", delta_color="inverse",
+                     help="Empresas com saldo credor acima de R$ 50.000 e sem movimentação há 6+ meses. Indica possível acumulação indevida")
+
         with col2:
             col_cresc = get_col_name('crescimento_saldo_percentual', periodo)
             if col_cresc in df_filtrado.columns:
                 cresc_anorm = len(df_filtrado[df_filtrado[col_cresc] > 200])
-                st.metric("Crescimento >200%", f"{cresc_anorm:,}", delta_color="inverse")
+                st.metric("Crescimento >200%", f"{cresc_anorm:,}", delta_color="inverse",
+                         help="Empresas cujo saldo credor cresceu mais de 200% no período analisado. Crescimento anormal pode indicar fraude")
             else:
-                st.metric("Crescimento >200%", "N/A")
-        
+                st.metric("Crescimento >200%", "N/A", help="Dados de crescimento não disponíveis")
+
         with col3:
             muito_alto = len(df_filtrado[df_filtrado['saldo_credor_atual'] > 500000])
             saldo_muito_alto = df_filtrado[df_filtrado['saldo_credor_atual'] > 500000]['saldo_credor_atual'].sum()
             st.metric("Saldo >R$ 500K", f"{muito_alto:,}",
-                     delta=f"R$ {saldo_muito_alto/1e6:.1f}M")
-        
+                     delta=f"R$ {saldo_muito_alto/1e6:.1f}M",
+                     help="Empresas com saldo credor superior a R$ 500.000. O delta mostra o valor total acumulado por essas empresas")
+
         with col4:
             col_desvio = get_col_name('desvio_padrao_credito', periodo)
             col_media = get_col_name('media_credito', periodo)
             if col_desvio in df_filtrado.columns and col_media in df_filtrado.columns:
                 baixa_var = len(df_filtrado[
-                    (df_filtrado[col_desvio] < 1000) & 
+                    (df_filtrado[col_desvio] < 1000) &
                     (df_filtrado[col_media] > 50000)
                 ])
-                st.metric("Baixa Variação", f"{baixa_var:,}", delta_color="inverse")
+                st.metric("Baixa Variação", f"{baixa_var:,}", delta_color="inverse",
+                         help="Empresas com desvio padrão < R$ 1.000 e média > R$ 50.000. Padrão suspeito de valores constantes")
             else:
-                st.metric("Baixa Variação", "N/A")
-        
+                st.metric("Baixa Variação", "N/A", help="Dados de variação não disponíveis")
+
         with col5:
             if 'flag_saldo_suspeito' in df_filtrado.columns:
                 suspeitos = len(df_filtrado[df_filtrado['flag_saldo_suspeito'] == True])
                 st.metric("Saldos Suspeitos", f"{suspeitos:,}",
-                         delta=f"{suspeitos/kpis['total_empresas']*100:.1f}%" if kpis['total_empresas'] > 0 else "0%")
+                         delta=f"{suspeitos/kpis['total_empresas']*100:.1f}%" if kpis['total_empresas'] > 0 else "0%",
+                         help="Empresas que atendem a critérios de saldo suspeito: alto+estagnado, crescimento >200% ou saldo >R$ 500K")
             else:
-                st.metric("Saldos Suspeitos", "N/A")
+                st.metric("Saldos Suspeitos", "N/A", help="Flag de saldo suspeito não calculada")
     
     else:  # ambos
         col1, col2, col3, col4, col5 = st.columns(5)
-        
+
         with col1:
             qtd_6m = len(df_filtrado[df_filtrado['qtde_ultimos_12m_iguais'] >= 6])
-            st.metric("6+ Meses Parado", f"{qtd_6m:,}")
-        
+            st.metric("6+ Meses Parado", f"{qtd_6m:,}",
+                     help="Empresas com saldo credor inalterado por 6 ou mais meses consecutivos")
+
         with col2:
             alto_estag = len(df_filtrado[
-                (df_filtrado['saldo_credor_atual'] > 50000) & 
+                (df_filtrado['saldo_credor_atual'] > 50000) &
                 (df_filtrado['qtde_ultimos_12m_iguais'] >= 6)
             ])
-            st.metric("Alto + Estagnado", f"{alto_estag:,}")
-        
+            st.metric("Alto + Estagnado", f"{alto_estag:,}",
+                     help="Empresas com saldo > R$ 50.000 e sem movimentação há 6+ meses")
+
         with col3:
             if 'flag_tem_omissoes' in df_filtrado.columns:
                 qtd_om = len(df_filtrado[df_filtrado['flag_tem_omissoes'] == 1])
-                st.metric("Com Omissões", f"{qtd_om:,}")
+                st.metric("Com Omissões", f"{qtd_om:,}",
+                         help="Empresas com omissão de declarações obrigatórias")
             else:
-                st.metric("Com Omissões", "N/A")
-        
+                st.metric("Com Omissões", "N/A", help="Dados não disponíveis")
+
         with col4:
             col_cresc = get_col_name('crescimento_saldo_percentual', periodo)
             if col_cresc in df_filtrado.columns:
                 cresc = len(df_filtrado[df_filtrado[col_cresc] > 200])
-                st.metric("Crescimento >200%", f"{cresc:,}")
+                st.metric("Crescimento >200%", f"{cresc:,}",
+                         help="Empresas cujo saldo credor cresceu mais de 200% no período")
             else:
-                st.metric("Crescimento >200%", "N/A")
-        
+                st.metric("Crescimento >200%", "N/A", help="Dados não disponíveis")
+
         with col5:
             if 'flag_cancelamento' in df_filtrado.columns and 'flag_saldo_suspeito' in df_filtrado.columns:
                 prioritarios = len(df_filtrado[
-                    (df_filtrado['flag_cancelamento'] == True) | 
+                    (df_filtrado['flag_cancelamento'] == True) |
                     (df_filtrado['flag_saldo_suspeito'] == True)
                 ])
                 st.metric("Prioritários", f"{prioritarios:,}",
-                         delta=f"{prioritarios/kpis['total_empresas']*100:.1f}%" if kpis['total_empresas'] > 0 else "0%")
+                         delta=f"{prioritarios/kpis['total_empresas']*100:.1f}%" if kpis['total_empresas'] > 0 else "0%",
+                         help="Empresas que são candidatas ao cancelamento OU possuem saldos suspeitos")
             else:
-                st.metric("Prioritários", "N/A")
+                st.metric("Prioritários", "N/A", help="Flags não calculadas")
     
     # Terceira linha - Indicadores de Fraude
     col_score_comb = get_col_name('score_risco_combinado', periodo)
     if col_score_comb in df.columns:
         st.subheader("🚨 Indicadores de Fraude (v2.0)")
-        
+
         col1, col2, col3, col4, col5 = st.columns(5)
-        
+
         with col1:
-            st.metric("Score Combinado Médio", f"{kpis['score_combinado_medio']:.1f}")
-        
+            st.metric("Score Combinado Médio", f"{kpis['score_combinado_medio']:.1f}",
+                     help="Média do score combinado que integra múltiplos indicadores de risco e fraude. Valores > 70 indicam alto risco")
+
         with col2:
             perc_susp = (kpis['empresas_suspeitas'] / kpis['total_empresas'] * 100) if kpis['total_empresas'] > 0 else 0
-            st.metric("Empresas Suspeitas", f"{kpis['empresas_suspeitas']:,}", 
-                     delta=f"{perc_susp:.1f}%", delta_color="inverse")
-        
+            st.metric("Empresas Suspeitas", f"{kpis['empresas_suspeitas']:,}",
+                     delta=f"{perc_susp:.1f}%", delta_color="inverse",
+                     help="Empresas marcadas como suspeitas pelo sistema de IA, baseado em padrões de comportamento anômalo")
+
         with col3:
-            st.metric("Canceladas/Inex", f"{kpis['empresas_canceladas']:,}", delta_color="inverse")
-        
+            st.metric("Canceladas/Inex", f"{kpis['empresas_canceladas']:,}", delta_color="inverse",
+                     help="Empresas com situação cadastral cancelada ou inexistente que ainda mantêm saldo credor")
+
         with col4:
-            st.metric("5+ Indícios Fraude", f"{kpis['empresas_5plus_indicios']:,}", delta_color="inverse")
-        
+            st.metric("5+ Indícios Fraude", f"{kpis['empresas_5plus_indicios']:,}", delta_color="inverse",
+                     help="Empresas que apresentam 5 ou mais indícios de fraude detectados pelo sistema")
+
         with col5:
             if kpis['empresas_suspeitas'] > 0 and 'flag_empresa_suspeita' in df_filtrado.columns:
                 saldo_susp = df_filtrado[df_filtrado['flag_empresa_suspeita'] == 1]['saldo_credor_atual'].sum()
-                st.metric("Saldo Suspeitas", f"R$ {saldo_susp/1e6:.1f}M")
+                st.metric("Saldo Suspeitas", f"R$ {saldo_susp/1e6:.1f}M",
+                         help="Soma dos saldos credores de todas as empresas marcadas como suspeitas")
             else:
-                st.metric("Saldo Suspeitas", "R$ 0.0M")
+                st.metric("Saldo Suspeitas", "R$ 0.0M", help="Nenhuma empresa suspeita encontrada")
     
     st.divider()
     
@@ -1250,26 +1275,35 @@ def pagina_comparativo_periodos(dados, filtros):
     with col1:
         st.markdown("### 📊 12 Meses (Recente)")
         kpis_12 = calcular_kpis_gerais(df_filtrado, '12m')
-        st.metric("Score Médio", f"{kpis_12['score_medio']:.1f}")
-        st.metric("Críticos", f"{kpis_12['criticos']:,}")
-        st.metric("Score Comb. Médio", f"{kpis_12['score_combinado_medio']:.1f}")
-    
+        st.metric("Score Médio", f"{kpis_12['score_medio']:.1f}",
+                 help="Score médio de risco calculado nos últimos 12 meses (Out/2024 a Set/2025)")
+        st.metric("Críticos", f"{kpis_12['criticos']:,}",
+                 help="Quantidade de empresas classificadas como CRÍTICO no período de 12 meses")
+        st.metric("Score Comb. Médio", f"{kpis_12['score_combinado_medio']:.1f}",
+                 help="Média do score combinado (risco + fraude) nos últimos 12 meses")
+
     with col2:
         st.markdown("### 📈 60 Meses (Histórico)")
         kpis_60 = calcular_kpis_gerais(df_filtrado, '60m')
-        st.metric("Score Médio", f"{kpis_60['score_medio']:.1f}")
-        st.metric("Críticos", f"{kpis_60['criticos']:,}")
-        st.metric("Score Comb. Médio", f"{kpis_60['score_combinado_medio']:.1f}")
-    
+        st.metric("Score Médio", f"{kpis_60['score_medio']:.1f}",
+                 help="Score médio de risco calculado nos últimos 60 meses (Set/2020 a Set/2025)")
+        st.metric("Críticos", f"{kpis_60['criticos']:,}",
+                 help="Quantidade de empresas classificadas como CRÍTICO no período de 60 meses")
+        st.metric("Score Comb. Médio", f"{kpis_60['score_combinado_medio']:.1f}",
+                 help="Média do score combinado (risco + fraude) nos últimos 60 meses")
+
     with col3:
         st.markdown("### 🔄 Variação")
         var_score = kpis_60['score_medio'] - kpis_12['score_medio']
         var_crit = kpis_60['criticos'] - kpis_12['criticos']
         var_comb = kpis_60['score_combinado_medio'] - kpis_12['score_combinado_medio']
-        
-        st.metric("Δ Score", f"{var_score:+.1f}")
-        st.metric("Δ Críticos", f"{var_crit:+,}")
-        st.metric("Δ Score Comb.", f"{var_comb:+.1f}")
+
+        st.metric("Δ Score", f"{var_score:+.1f}",
+                 help="Diferença entre score 60m e 12m. Valor positivo indica piora do risco histórico")
+        st.metric("Δ Críticos", f"{var_crit:+,}",
+                 help="Diferença na quantidade de empresas críticas entre períodos")
+        st.metric("Δ Score Comb.", f"{var_comb:+.1f}",
+                 help="Diferença no score combinado entre períodos")
     
     st.divider()
     
@@ -1375,28 +1409,33 @@ def pagina_analise_suspeitas(dados, filtros):
     
     # KPIs de Fraude
     st.subheader("📊 Panorama de Fraudes")
-    
+
     col1, col2, col3, col4, col5 = st.columns(5)
-    
+
     with col1:
         qtd_susp = len(df_filtrado[df_filtrado['flag_empresa_suspeita'] == 1])
-        st.metric("Empresas Suspeitas", f"{qtd_susp:,}")
-    
+        st.metric("Empresas Suspeitas", f"{qtd_susp:,}",
+                 help="Total de empresas identificadas como suspeitas pelo sistema de IA fiscal")
+
     with col2:
         qtd_canc = len(df_filtrado[df_filtrado.get('sn_cancelado_inex_inativ', 0) == 1])
-        st.metric("Canceladas/Inexistentes", f"{qtd_canc:,}")
-    
+        st.metric("Canceladas/Inexistentes", f"{qtd_canc:,}",
+                 help="Empresas com situação cadastral cancelada, inexistente ou inativa na Receita")
+
     with col3:
         qtd_ind5 = len(df_filtrado[df_filtrado.get('qtde_indicios_fraude', 0) >= 5])
-        st.metric("5+ Indícios", f"{qtd_ind5:,}")
-    
+        st.metric("5+ Indícios", f"{qtd_ind5:,}",
+                 help="Empresas com 5 ou mais indícios de fraude detectados, requerem investigação prioritária")
+
     with col4:
         qtd_zer = len(df_filtrado[df_filtrado.get('flag_tem_declaracoes_zeradas', 0) == 1])
-        st.metric("Com Decl. Zeradas", f"{qtd_zer:,}")
-    
+        st.metric("Com Decl. Zeradas", f"{qtd_zer:,}",
+                 help="Empresas que apresentaram declarações com valores zerados em algum período")
+
     with col5:
         qtd_omi = len(df_filtrado[df_filtrado.get('flag_tem_omissoes', 0) == 1])
-        st.metric("Com Omissões", f"{qtd_omi:,}")
+        st.metric("Com Omissões", f"{qtd_omi:,}",
+                 help="Empresas que deixaram de entregar declarações obrigatórias")
     
     # SEÇÃO CORRIGIDA: Detalhamento de Omissões DIME/PGDAS
     st.divider()
@@ -1861,56 +1900,66 @@ def pagina_drill_down_empresa(dados, filtros):
     st.info(f"📊 Análise baseada em: **{periodo.upper()}**")
     
     st.subheader("Indicadores da Empresa")
-    
+
     col1, col2, col3, col4, col5 = st.columns(5)
-    
+
     col_score = get_col_name('score_risco', periodo)
     col_class = get_col_name('classificacao_risco', periodo)
     col_cresc = get_col_name('crescimento_saldo_percentual', periodo)
-    
+
     with col1:
         if col_score in empresa_info.index:
             score = empresa_info[col_score]
-            st.metric(f"Score Risco ({periodo})", f"{score:.1f}")
-    
+            st.metric(f"Score Risco ({periodo})", f"{score:.1f}",
+                     help="Pontuação de risco da empresa. Quanto maior, maior a probabilidade de irregularidade")
+
     with col2:
         if col_class in empresa_info.index:
-            st.metric("Classificação", empresa_info[col_class])
-    
+            st.metric("Classificação", empresa_info[col_class],
+                     help="Classificação de risco: CRÍTICO (maior risco), ALTO, MÉDIO ou BAIXO")
+
     with col3:
-        st.metric("Saldo Credor", f"R$ {empresa_info['saldo_credor_atual']/1e6:.2f}M")
-    
+        st.metric("Saldo Credor", f"R$ {empresa_info['saldo_credor_atual']/1e6:.2f}M",
+                 help="Saldo credor de ICMS acumulado pela empresa no período atual")
+
     with col4:
-        st.metric("Meses Estagnados", f"{int(empresa_info['qtde_ultimos_12m_iguais'])}")
-    
+        st.metric("Meses Estagnados", f"{int(empresa_info['qtde_ultimos_12m_iguais'])}",
+                 help="Quantidade de meses consecutivos em que o saldo credor permaneceu inalterado")
+
     with col5:
         if col_cresc in empresa_info.index:
-            st.metric(f"Crescimento ({periodo})", f"{empresa_info[col_cresc]:+.1f}%")
+            st.metric(f"Crescimento ({periodo})", f"{empresa_info[col_cresc]:+.1f}%",
+                     help="Percentual de crescimento/redução do saldo credor no período analisado")
     
     # Indicadores de Fraude
     col_score_comb = get_col_name('score_risco_combinado', periodo)
     if col_score_comb in empresa_info.index:
         st.divider()
         st.subheader("🚨 Indicadores de Fraude (v2.0)")
-        
+
         col1, col2, col3, col4, col5 = st.columns(5)
-        
+
         with col1:
-            st.metric(f"Score Combinado ({periodo})", f"{empresa_info[col_score_comb]:.1f}")
-        
+            st.metric(f"Score Combinado ({periodo})", f"{empresa_info[col_score_comb]:.1f}",
+                     help="Score que combina indicadores de risco com sinais de fraude. Valores > 100 indicam situação crítica")
+
         with col2:
             flag_susp = "SIM" if empresa_info.get('flag_empresa_suspeita', 0) == 1 else "NÃO"
-            st.metric("Empresa Suspeita", flag_susp)
-        
+            st.metric("Empresa Suspeita", flag_susp,
+                     help="Indica se a empresa foi marcada como suspeita pelo sistema de inteligência artificial fiscal")
+
         with col3:
-            st.metric("Indícios Fraude", f"{int(empresa_info.get('qtde_indicios_fraude', 0))}")
-        
+            st.metric("Indícios Fraude", f"{int(empresa_info.get('qtde_indicios_fraude', 0))}",
+                     help="Quantidade de indícios de fraude detectados para esta empresa. 5+ requer investigação prioritária")
+
         with col4:
             flag_canc = "SIM" if empresa_info.get('sn_cancelado_inex_inativ', 0) == 1 else "NÃO"
-            st.metric("Cancelada/Inex", flag_canc)
-        
+            st.metric("Cancelada/Inex", flag_canc,
+                     help="Indica se a empresa está com situação cadastral cancelada, inexistente ou inativa")
+
         with col5:
-            st.metric("Score Suspeita", f"{empresa_info.get('score_suspeita', 0):.1f}")
+            st.metric("Score Suspeita", f"{empresa_info.get('score_suspeita', 0):.1f}",
+                     help="Pontuação específica de suspeita atribuída pela análise de IA. Quanto maior, mais suspeita")
         
         # Alertas visuais
         if empresa_info.get('flag_empresa_suspeita', 0) == 1:
@@ -1975,17 +2024,19 @@ def pagina_drill_down_empresa(dados, filtros):
         
         # Informações adicionais
         col1, col2 = st.columns(2)
-        
+
         with col1:
             total_noteiras = empresa_info.get('qt_clientes_noteiras', 0) + empresa_info.get('qt_fornecedoras_noteiras', 0)
-            st.metric("Total Noteiras", f"{int(total_noteiras)}")
+            st.metric("Total Noteiras", f"{int(total_noteiras)}",
+                     help="Quantidade total de empresas noteiras (clientes + fornecedores) com relacionamento comercial")
             st.caption(f"Clientes: {int(empresa_info.get('qt_clientes_noteiras', 0))} | Fornecedores: {int(empresa_info.get('qt_fornecedoras_noteiras', 0))}")
-        
+
         with col2:
             if empresa_info.get('flag_tem_declaracoes_zeradas', 0) == 1 or empresa_info.get('flag_tem_omissoes', 0) == 1:
                 total_zer = empresa_info.get('periodos_zerados_normal', 0) + empresa_info.get('periodos_zerados_simples', 0)
                 total_omi = empresa_info.get('periodos_omissos_normal', 0) + empresa_info.get('periodos_omissos_simples', 0)
-                st.metric("Irregularidades Declaratórias", f"{int(total_zer + total_omi)}")
+                st.metric("Irregularidades Declaratórias", f"{int(total_zer + total_omi)}",
+                         help="Total de períodos com declarações zeradas ou omissas (DIME + PGDAS)")
                 st.caption(f"Zerados: {int(total_zer)} | Omissos: {int(total_omi)}")
 
 def pagina_machine_learning(dados, filtros):
@@ -2183,13 +2234,20 @@ def pagina_padroes_abuso(dados, filtros):
     }
     
     st.subheader("📊 Resumo de Padrões Suspeitos")
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
+    tooltips_padroes = {
+        'Só Acumula (crescimento contínuo)': "Empresas que apenas acumulam crédito (crescimento positivo) sem utilização, com saldo > R$ 10.000",
+        'Estagnado com Saldo Alto': "Empresas com saldo > R$ 50.000 e sem movimentação há 6+ meses. Padrão típico de acumulação irregular",
+        'Crescimento Anormal (>500%)': "Empresas com crescimento de saldo credor superior a 500% no período. Indica comportamento atípico",
+        'Baixa Variação + Saldo Alto': "Empresas com desvio padrão < R$ 1.000 mas média > R$ 50.000. Valores artificialmente constantes"
+    }
+
     items = list(padroes.items())
     for idx, (padrao, qtd) in enumerate(items):
         with [col1, col2, col3, col4][idx]:
-            st.metric(padrao, f"{qtd:,}")
+            st.metric(padrao, f"{qtd:,}", help=tooltips_padroes.get(padrao, ""))
     
     df_padroes = pd.DataFrame(list(padroes.items()), columns=['Padrão', 'Quantidade'])
     
@@ -2405,23 +2463,27 @@ def pagina_empresas_inativas(dados, filtros):
     st.info(f"📋 **Critério:** {desc_criterio}")
     
     st.subheader("📊 Indicadores de Inatividade")
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
-        st.metric("Empresas Inativas", f"{len(df_inativas):,}")
-    
+        st.metric("Empresas Inativas", f"{len(df_inativas):,}",
+                 help="Total de empresas que atendem ao critério de inatividade selecionado")
+
     with col2:
         saldo_total_inativo = df_inativas['saldo_credor_atual'].sum()
-        st.metric("Saldo Total", f"R$ {saldo_total_inativo/1e6:.1f}M")
-    
+        st.metric("Saldo Total", f"R$ {saldo_total_inativo/1e6:.1f}M",
+                 help="Soma dos saldos credores de todas as empresas classificadas como inativas")
+
     with col3:
         media_saldo = df_inativas['saldo_credor_atual'].mean() if len(df_inativas) > 0 else 0
-        st.metric("Saldo Médio", f"R$ {media_saldo/1e3:.1f}K")
-    
+        st.metric("Saldo Médio", f"R$ {media_saldo/1e3:.1f}K",
+                 help="Média do saldo credor por empresa inativa")
+
     with col4:
         taxa_inatividade = len(df_inativas) / len(df) * 100 if len(df) > 0 else 0
-        st.metric("Taxa Inatividade", f"{taxa_inatividade:.1f}%")
+        st.metric("Taxa Inatividade", f"{taxa_inatividade:.1f}%",
+                 help="Percentual de empresas inativas em relação ao total da base")
     
     # Adicionar comparação entre períodos
     if len(df_inativas) > 0:
@@ -2434,18 +2496,20 @@ def pagina_empresas_inativas(dados, filtros):
             # Variação 12 meses
             df_inativas['var_12m'] = abs(df_inativas['saldo_credor_atual'] - df_inativas['saldo_12m_atras'])
             media_var_12m = df_inativas['var_12m'].mean()
-            st.metric("Variação Média 12m", f"R$ {media_var_12m:,.2f}")
-            
+            st.metric("Variação Média 12m", f"R$ {media_var_12m:,.2f}",
+                     help="Média da variação absoluta do saldo credor nos últimos 12 meses para empresas inativas")
+
             zeradas_12m = len(df_inativas[df_inativas['var_12m'] == 0])
             st.caption(f"✓ {zeradas_12m:,} empresas com variação zero")
-        
+
         with col2:
             # Variação 60 meses
             if 'saldo_60m_atras' in df_inativas.columns:
                 df_inativas['var_60m'] = abs(df_inativas['saldo_credor_atual'] - df_inativas['saldo_60m_atras'])
                 media_var_60m = df_inativas['var_60m'].mean()
-                st.metric("Variação Média 60m", f"R$ {media_var_60m:,.2f}")
-                
+                st.metric("Variação Média 60m", f"R$ {media_var_60m:,.2f}",
+                         help="Média da variação absoluta do saldo credor nos últimos 60 meses para empresas inativas")
+
                 zeradas_60m = len(df_inativas[df_inativas['var_60m'] == 0])
                 st.caption(f"✓ {zeradas_60m:,} empresas com variação zero")
     
@@ -2584,23 +2648,27 @@ def pagina_reforma_tributaria(dados, filtros):
     with col1:
         st.markdown("### 🔴 Cenário Pessimista (100%)")
         st.caption("Todas as empresas solicitam ressarcimento")
-        
+
         total_risco = df['saldo_credor_atual'].sum()
-        st.metric("Valor Total em Risco", f"R$ {total_risco/1e9:.2f} Bilhões")
-        
+        st.metric("Valor Total em Risco", f"R$ {total_risco/1e9:.2f} Bilhões",
+                 help="Soma de todos os saldos credores que poderiam ser objeto de ressarcimento ou compensação com IBS")
+
         if col_class in df.columns:
             criticos_alto = df[df[col_class].isin(['CRÍTICO', 'ALTO'])]['saldo_credor_atual'].sum()
-            st.metric("Apenas Críticos/Alto", f"R$ {criticos_alto/1e9:.2f} Bilhões")
-    
+            st.metric("Apenas Críticos/Alto", f"R$ {criticos_alto/1e9:.2f} Bilhões",
+                     help="Soma dos saldos credores apenas de empresas classificadas como CRÍTICO ou ALTO risco")
+
     with col2:
         st.markdown("### 🟡 Cenário Realista (30-50%)")
         st.caption("Estimativa: 30-50% solicitarão ressarcimento")
-        
+
         cenario_min = total_risco * 0.3
         cenario_max = total_risco * 0.5
-        
-        st.metric("Cenário Mínimo (30%)", f"R$ {cenario_min/1e9:.2f} Bilhões")
-        st.metric("Cenário Máximo (50%)", f"R$ {cenario_max/1e9:.2f} Bilhões")
+
+        st.metric("Cenário Mínimo (30%)", f"R$ {cenario_min/1e9:.2f} Bilhões",
+                 help="Projeção conservadora: 30% das empresas solicitarão ressarcimento dos créditos")
+        st.metric("Cenário Máximo (50%)", f"R$ {cenario_max/1e9:.2f} Bilhões",
+                 help="Projeção moderada: 50% das empresas solicitarão ressarcimento dos créditos")
     
     st.divider()
     
@@ -2617,22 +2685,25 @@ def pagina_reforma_tributaria(dados, filtros):
         df_preparando = pd.DataFrame()
     
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
-        st.metric("Empresas Suspeitas", f"{len(df_preparando):,}")
-    
+        st.metric("Empresas Suspeitas", f"{len(df_preparando):,}",
+                 help="Empresas com crescimento > 200% e saldo > R$ 50.000, potencialmente se preparando para a reforma")
+
     with col2:
         if not df_preparando.empty:
-            st.metric("Saldo Suspeito", f"R$ {df_preparando['saldo_credor_atual'].sum()/1e6:.1f}M")
+            st.metric("Saldo Suspeito", f"R$ {df_preparando['saldo_credor_atual'].sum()/1e6:.1f}M",
+                     help="Soma dos saldos credores das empresas com comportamento suspeito pós-2023")
         else:
-            st.metric("Saldo Suspeito", "R$ 0.0M")
-    
+            st.metric("Saldo Suspeito", "R$ 0.0M", help="Nenhuma empresa com comportamento suspeito identificada")
+
     with col3:
         if not df_preparando.empty and col_cresc in df_preparando.columns:
             cresc_medio = df_preparando[col_cresc].mean()
-            st.metric("Crescimento Médio", f"{cresc_medio:.0f}%")
+            st.metric("Crescimento Médio", f"{cresc_medio:.0f}%",
+                     help="Média do crescimento percentual do saldo credor das empresas suspeitas")
         else:
-            st.metric("Crescimento Médio", "0%")
+            st.metric("Crescimento Médio", "0%", help="Dados de crescimento não disponíveis")
     
     st.subheader("📈 Evolução do Risco ao Longo do Tempo")
     
@@ -2752,23 +2823,27 @@ def pagina_noteiras(dados, filtros):
     df_noteiras = df_filtrado[df_filtrado['total_noteiras'] >= 5].copy()
     
     st.subheader("📊 Panorama de Noteiras")
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
-        st.metric("Empresas com 5+ Noteiras", f"{len(df_noteiras):,}")
-    
+        st.metric("Empresas com 5+ Noteiras", f"{len(df_noteiras):,}",
+                 help="Total de empresas que possuem relacionamento comercial com 5 ou mais empresas noteiras")
+
     with col2:
-        st.metric("Saldo Total", f"R$ {df_noteiras['saldo_credor_atual'].sum()/1e6:.1f}M")
-    
+        st.metric("Saldo Total", f"R$ {df_noteiras['saldo_credor_atual'].sum()/1e6:.1f}M",
+                 help="Soma dos saldos credores das empresas com relacionamento com noteiras")
+
     with col3:
         media_not = df_noteiras['total_noteiras'].mean() if len(df_noteiras) > 0 else 0
-        st.metric("Média Noteiras", f"{media_not:.1f}")
-    
+        st.metric("Média Noteiras", f"{media_not:.1f}",
+                 help="Média de empresas noteiras (clientes + fornecedores) por empresa analisada")
+
     with col4:
         if 'flag_empresa_suspeita' in df_noteiras.columns:
             susp = len(df_noteiras[df_noteiras['flag_empresa_suspeita'] == 1])
-            st.metric("Suspeitas", f"{susp:,}")
+            st.metric("Suspeitas", f"{susp:,}",
+                     help="Quantidade de empresas com noteiras que também estão marcadas como suspeitas pelo sistema")
     
     st.divider()
     
@@ -2891,22 +2966,26 @@ def pagina_declaracoes_zeradas(dados, filtros):
     ].copy()
     
     st.subheader("📊 Panorama de Declarações")
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
-        st.metric("Com Zeradas", f"{len(df_zeradas[df_zeradas['total_zerados'] >= 1]):,}")
-    
+        st.metric("Com Zeradas", f"{len(df_zeradas[df_zeradas['total_zerados'] >= 1]):,}",
+                 help="Empresas que apresentaram pelo menos uma declaração com valores zerados")
+
     with col2:
-        st.metric("Com Omissões", f"{len(df_zeradas[df_zeradas['total_omissos'] >= 1]):,}")
-    
+        st.metric("Com Omissões", f"{len(df_zeradas[df_zeradas['total_omissos'] >= 1]):,}",
+                 help="Empresas que deixaram de entregar pelo menos uma declaração obrigatória")
+
     with col3:
         media_zer = df_zeradas['total_zerados'].mean() if len(df_zeradas) > 0 else 0
-        st.metric("Média Zerados", f"{media_zer:.1f}")
-    
+        st.metric("Média Zerados", f"{media_zer:.1f}",
+                 help="Média de períodos com declarações zeradas por empresa")
+
     with col4:
         saldo_tot = df_zeradas['saldo_credor_atual'].sum()
-        st.metric("Saldo Total", f"R$ {saldo_tot/1e6:.1f}M")
+        st.metric("Saldo Total", f"R$ {saldo_tot/1e6:.1f}M",
+                 help="Soma dos saldos credores de empresas com declarações zeradas ou omissas")
     
     # SEÇÃO CORRIGIDA: Detalhamento de Omissões por Tipo
     st.divider()
@@ -3089,24 +3168,28 @@ def pagina_alertas_automaticos(dados, filtros):
     
     # Dashboard
     st.subheader("📊 Dashboard de Alertas")
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         crit = len(df_alertas[df_alertas['prioridade'] == 1])
-        st.metric("CRÍTICOS", f"{crit:,}", delta_color="inverse")
-    
+        st.metric("CRÍTICOS", f"{crit:,}", delta_color="inverse",
+                 help="Alertas de máxima prioridade: canceladas com alto crédito, 10+ indícios, score 120+ ou 7+ indícios com saldo > R$ 500K")
+
     with col2:
         altos = len(df_alertas[df_alertas['prioridade'] == 2])
-        st.metric("ALTOS", f"{altos:,}", delta_color="inverse")
-    
+        st.metric("ALTOS", f"{altos:,}", delta_color="inverse",
+                 help="Alertas de alta prioridade: score 100-119, 15+ noteiras, congelado 12m com score alto")
+
     with col3:
         medios = len(df_alertas[df_alertas['prioridade'] == 3])
-        st.metric("MÉDIOS", f"{medios:,}")
-    
+        st.metric("MÉDIOS", f"{medios:,}",
+                 help="Alertas de média prioridade: 5+ indícios de fraude")
+
     with col4:
         baixos = len(df_alertas[df_alertas['prioridade'] == 4])
-        st.metric("BAIXOS", f"{baixos:,}")
+        st.metric("BAIXOS", f"{baixos:,}",
+                 help="Alertas de baixa prioridade: empresas para monitoramento contínuo")
     
     # Distribuição por tipo
     dist_alertas = df_alertas['tipo_alerta'].value_counts().reset_index()
@@ -3273,20 +3356,24 @@ def pagina_sobre(dados, filtros):
     
     if not df.empty:
         kpis = calcular_kpis_gerais(df)
-        
+
         col1, col2, col3, col4 = st.columns(4)
-        
+
         with col1:
-            st.metric("Empresas", f"{kpis['total_empresas']:,}")
-        
+            st.metric("Empresas", f"{kpis['total_empresas']:,}",
+                     help="Total de empresas com saldo credor de ICMS na base de dados")
+
         with col2:
-            st.metric("Saldo Total", f"R$ {kpis['saldo_total']/1e9:.2f}B")
-        
+            st.metric("Saldo Total", f"R$ {kpis['saldo_total']/1e9:.2f}B",
+                     help="Soma de todos os saldos credores de ICMS acumulados")
+
         with col3:
-            st.metric("Empresas Suspeitas", f"{kpis['empresas_suspeitas']:,}")
-        
+            st.metric("Empresas Suspeitas", f"{kpis['empresas_suspeitas']:,}",
+                     help="Total de empresas identificadas como suspeitas pelo sistema de IA")
+
         with col4:
-            st.metric("Atualização", datetime.now().strftime('%d/%m/%Y'))
+            st.metric("Atualização", datetime.now().strftime('%d/%m/%Y'),
+                     help="Data e hora da última atualização dos dados exibidos")
 
 # =============================================================================
 # 8. FUNÇÃO PRINCIPAL
