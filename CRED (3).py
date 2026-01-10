@@ -401,7 +401,189 @@ def carregar_dados_setorial(_engine, setor):
     except Exception as e:
         st.error(f"Erro ao carregar setor {setor}: {str(e)[:100]}")
         return pd.DataFrame()
-        
+
+
+# =============================================================================
+# 4.1 FUNÇÕES DE CARREGAMENTO - CONTADORES
+# =============================================================================
+
+@st.cache_data(ttl=3600)
+def carregar_contadores_ranking(_engine):
+    """Carrega ranking de contadores."""
+    try:
+        query = f"""
+            SELECT * FROM {DATABASE}.credito_contador_ranking
+            ORDER BY ranking_contador
+            LIMIT 500
+        """
+        df = pd.read_sql(query, _engine)
+        df.columns = [col.lower().strip() for col in df.columns]
+        return df
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ credito_contador_ranking: {str(e)[:50]}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
+def carregar_contadores_resumo(_engine):
+    """Carrega resumo de contadores."""
+    try:
+        query = f"SELECT * FROM {DATABASE}.credito_contador_resumo LIMIT 1"
+        df = pd.read_sql(query, _engine)
+        df.columns = [col.lower().strip() for col in df.columns]
+        return df
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ credito_contador_resumo: {str(e)[:50]}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
+def carregar_contadores_reforma(_engine):
+    """Carrega análise de comportamento reforma tributária por contador."""
+    try:
+        query = f"""
+            SELECT * FROM {DATABASE}.credito_contador_reforma
+            ORDER BY ranking_contador
+            LIMIT 500
+        """
+        df = pd.read_sql(query, _engine)
+        df.columns = [col.lower().strip() for col in df.columns]
+        return df
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ credito_contador_reforma: {str(e)[:50]}")
+        return pd.DataFrame()
+
+
+def carregar_detalhes_contador(_engine, cpf_cnpj_contador):
+    """Carrega detalhes de um contador específico."""
+    detalhes = {}
+
+    # Limpar CPF/CNPJ
+    cpf_cnpj_limpo = ''.join(filter(str.isdigit, str(cpf_cnpj_contador)))
+
+    # 1. Resumo do contador
+    try:
+        query_resumo = f"""
+            SELECT * FROM {DATABASE}.credito_contador_ranking
+            WHERE REGEXP_REPLACE(cpf_cnpj_contador, '[^0-9]', '') = '{cpf_cnpj_limpo}'
+        """
+        detalhes['resumo'] = pd.read_sql(query_resumo, _engine)
+    except:
+        detalhes['resumo'] = pd.DataFrame()
+
+    # 2. Análise reforma
+    try:
+        query_reforma = f"""
+            SELECT * FROM {DATABASE}.credito_contador_reforma
+            WHERE REGEXP_REPLACE(cpf_cnpj_contador, '[^0-9]', '') = '{cpf_cnpj_limpo}'
+        """
+        detalhes['reforma'] = pd.read_sql(query_reforma, _engine)
+    except:
+        detalhes['reforma'] = pd.DataFrame()
+
+    # 3. Empresas do contador
+    try:
+        query_empresas = f"""
+            SELECT * FROM {DATABASE}.credito_contador_carteira
+            WHERE REGEXP_REPLACE(cpf_cnpj_contador, '[^0-9]', '') = '{cpf_cnpj_limpo}'
+            ORDER BY saldo_credor_atual DESC
+            LIMIT 200
+        """
+        detalhes['empresas'] = pd.read_sql(query_empresas, _engine)
+    except:
+        detalhes['empresas'] = pd.DataFrame()
+
+    return detalhes
+
+
+@st.cache_data(ttl=3600)
+def carregar_contadores_dinamico(_engine, dados_completo):
+    """
+    Carrega dados de contadores dinamicamente via JOIN com a view de cadastro.
+    Usar quando as tabelas pré-processadas não estiverem disponíveis.
+    """
+    if dados_completo.empty:
+        return pd.DataFrame()
+
+    try:
+        # Query para agregar dados de contadores
+        query = f"""
+            SELECT
+                contrib.nu_cpf_cnpj_contador AS cpf_cnpj_contador,
+                contrib.nm_contador AS nome_contador,
+                contrib.nu_crc_contador AS crc_contador,
+                contrib.nm_munic_contador AS municipio_contador,
+                contrib.cd_uf_contador AS uf_contador,
+
+                COUNT(DISTINCT contrib.nu_cnpj) AS total_empresas_carteira,
+                SUM(CASE WHEN cred.saldo_credor_atual > 0 THEN 1 ELSE 0 END) AS qtde_empresas_com_credito,
+                SUM(cred.saldo_credor_atual) AS saldo_credor_total,
+                AVG(cred.saldo_credor_atual) AS saldo_credor_medio,
+
+                SUM(CASE WHEN cred.classificacao_risco_12m = 'CRÍTICO' THEN 1 ELSE 0 END) AS qtde_risco_critico_12m,
+                SUM(CASE WHEN cred.classificacao_risco_12m = 'ALTO' THEN 1 ELSE 0 END) AS qtde_risco_alto_12m,
+                SUM(CASE WHEN cred.classificacao_risco_12m = 'MÉDIO' THEN 1 ELSE 0 END) AS qtde_risco_medio_12m,
+                SUM(CASE WHEN cred.classificacao_risco_12m = 'BAIXO' THEN 1 ELSE 0 END) AS qtde_risco_baixo_12m,
+
+                SUM(CASE WHEN cred.flag_empresa_suspeita = 1 THEN 1 ELSE 0 END) AS qtde_empresas_suspeitas,
+                SUM(cred.qtde_indicios_fraude) AS total_indicios_fraude,
+                SUM(CASE WHEN cred.qtde_ultimos_12m_iguais >= 12 THEN 1 ELSE 0 END) AS qtde_estagnadas_12m,
+
+                AVG(cred.score_risco_12m) AS score_medio_12m,
+                AVG(cred.score_risco_combinado_12m) AS score_combinado_medio_12m,
+
+                SUM(cred.vl_credito_presumido_12m) AS credito_presumido_total_12m,
+                SUM(CASE WHEN cred.saldo_credor_atual > 0 AND (cred.saldo_60m_atras IS NULL OR cred.saldo_60m_atras = 0) THEN 1 ELSE 0 END) AS qtde_novas_creditadoras,
+                SUM(CASE WHEN cred.crescimento_saldo_percentual_12m > 100 THEN 1 ELSE 0 END) AS qtde_crescimento_alto_12m
+
+            FROM {DATABASE}.credito_dime_completo cred
+            LEFT JOIN usr_sat_ods.vw_cad_contrib contrib
+                ON cred.nu_cnpj = contrib.nu_cnpj
+            WHERE contrib.nu_cpf_cnpj_contador IS NOT NULL
+              AND TRIM(contrib.nu_cpf_cnpj_contador) != ''
+            GROUP BY
+                contrib.nu_cpf_cnpj_contador,
+                contrib.nm_contador,
+                contrib.nu_crc_contador,
+                contrib.nm_munic_contador,
+                contrib.cd_uf_contador
+            HAVING COUNT(DISTINCT contrib.nu_cnpj) >= 1
+            ORDER BY saldo_credor_total DESC
+            LIMIT 500
+        """
+
+        df = pd.read_sql(query, _engine)
+        df.columns = [col.lower().strip() for col in df.columns]
+
+        # Calcular scores e classificações
+        if not df.empty:
+            df['taxa_com_credito_perc'] = (df['qtde_empresas_com_credito'] * 100.0 / df['total_empresas_carteira']).round(2)
+            df['taxa_risco_alto_critico_perc'] = ((df['qtde_risco_critico_12m'] + df['qtde_risco_alto_12m']) * 100.0 / df['total_empresas_carteira']).round(2)
+
+            # Score total simplificado
+            df['score_volume'] = (df['qtde_empresas_com_credito'] * 3).clip(upper=30)
+            df['score_concentracao'] = (df['taxa_risco_alto_critico_perc'] * 0.5).clip(upper=25)
+            df['score_financeiro'] = (df['saldo_credor_total'].apply(lambda x: np.log10(max(x, 1)) * 2.5)).clip(upper=25)
+            df['score_suspeita'] = (df['qtde_empresas_suspeitas'] * 5 + df['total_indicios_fraude'] * 0.5).clip(upper=20)
+
+            df['score_total_contador'] = df['score_volume'] + df['score_concentracao'] + df['score_financeiro'] + df['score_suspeita']
+
+            df['classificacao_risco_contador'] = pd.cut(
+                df['score_total_contador'],
+                bins=[-1, 30, 50, 70, 100],
+                labels=['BAIXO', 'MÉDIO', 'ALTO', 'CRÍTICO']
+            )
+
+            # Ranking
+            df['ranking_contador'] = range(1, len(df) + 1)
+
+        return df
+
+    except Exception as e:
+        st.error(f"Erro ao carregar contadores dinamicamente: {str(e)[:100]}")
+        return pd.DataFrame()
+
+
 # =============================================================================
 # 5. FUNÇÕES DE PROCESSAMENTO E CÁLCULOS
 # =============================================================================
@@ -3376,6 +3558,550 @@ def pagina_sobre(dados, filtros):
                      help="Data e hora da última atualização dos dados exibidos")
 
 # =============================================================================
+# 7.1 PÁGINA DE ANÁLISE POR CONTADOR
+# =============================================================================
+
+def pagina_analise_contador(dados, filtros):
+    """Página de análise por contador/contabilista."""
+    st.markdown("<h1 class='main-header'>📋 Análise por Contador/Contabilista</h1>", unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class='info-box'>
+    <b>Objetivo:</b> Identificar contadores com alta concentração de empresas com créditos acumulados,
+    analisar padrões de comportamento e detectar possíveis irregularidades relacionadas à reforma tributária.
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Seção de ajuda
+    with st.expander("❓ Guia - Indicadores de Risco por Contador", expanded=False):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("""
+            **📊 Taxas Principais:**
+
+            **⚠️ Taxa com Crédito:**
+            - Fórmula: (Empresas com Crédito ÷ Carteira Total) × 100
+            - Quanto MAIOR, mais empresas do contador têm saldo credor
+
+            **📈 Taxa Risco Alto/Crítico:**
+            - Fórmula: (Crítico + Alto ÷ Carteira Total) × 100
+            - Mede concentração de empresas problemáticas
+            """)
+
+        with col2:
+            st.markdown("""
+            **🎯 Score do Contador:**
+            Composição:
+            - **Volume** (30pts): Qtde de empresas com crédito
+            - **Concentração** (25pts): % com risco alto/crítico
+            - **Financeiro** (25pts): Saldo credor total
+            - **Suspeita** (20pts): Empresas suspeitas + indícios
+
+            **🚨 Níveis de Alerta:**
+            - **INVESTIGAR**: Muitas empresas suspeitas
+            - **ATENÇÃO ESPECIAL**: Muitas novas creditadoras
+            - **MONITORAR**: Score alto
+            - **NORMAL**: Sem alertas
+            """)
+
+    # Carregar dados de contadores
+    engine = get_impala_engine()
+
+    # Tentar carregar tabelas pré-processadas primeiro
+    df_contadores = carregar_contadores_ranking(engine)
+    df_resumo = carregar_contadores_resumo(engine)
+
+    # Se não houver tabelas pré-processadas, usar carregamento dinâmico
+    if df_contadores.empty:
+        st.warning("⚠️ Tabelas de contadores não encontradas. Usando carregamento dinâmico (pode ser mais lento).")
+        with st.spinner("Carregando dados de contadores..."):
+            df_completo = dados.get('completo', pd.DataFrame())
+            df_contadores = carregar_contadores_dinamico(engine, df_completo)
+
+    if df_contadores.empty:
+        st.error("❌ Não foi possível carregar dados de contadores.")
+        st.info("""
+        **Para usar esta funcionalidade:**
+        1. Execute o script SQL `SQL_CONTADORES_CREDITOS.sql` no Impala
+        2. Ou aguarde o carregamento dinâmico (mais lento)
+        """)
+        return
+
+    # Tabs
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Visão Geral", "🏆 Ranking", "📈 Reforma Tributária", "🔍 Análise Individual"])
+
+    # =========================================================================
+    # TAB 1: VISÃO GERAL
+    # =========================================================================
+    with tab1:
+        st.subheader("Indicadores Gerais")
+
+        # KPIs - Linha 1
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            total_contadores = len(df_contadores)
+            st.metric("Total Contadores", f"{total_contadores:,}",
+                      help="Quantidade de contadores com empresas na base de créditos")
+
+        with col2:
+            total_empresas = df_contadores['total_empresas_carteira'].sum() if 'total_empresas_carteira' in df_contadores.columns else 0
+            st.metric("Empresas na Carteira", f"{int(total_empresas):,}",
+                      help="Soma de todas as empresas nas carteiras dos contadores")
+
+        with col3:
+            empresas_credito = df_contadores['qtde_empresas_com_credito'].sum() if 'qtde_empresas_com_credito' in df_contadores.columns else 0
+            st.metric("Com Saldo Credor", f"{int(empresas_credito):,}",
+                      help="Total de empresas com saldo credor positivo")
+
+        with col4:
+            if 'classificacao_risco_contador' in df_contadores.columns:
+                criticos = len(df_contadores[df_contadores['classificacao_risco_contador'] == 'CRÍTICO'])
+            else:
+                criticos = 0
+            st.metric("🔴 Contadores Críticos", f"{criticos:,}",
+                      help="Contadores com score de risco ≥ 70")
+
+        with col5:
+            saldo_total = df_contadores['saldo_credor_total'].sum() if 'saldo_credor_total' in df_contadores.columns else 0
+            st.metric("💰 Saldo Total", f"R$ {saldo_total/1e9:.2f}B",
+                      help="Soma dos saldos credores de todas as empresas vinculadas aos contadores")
+
+        st.divider()
+
+        # Gráficos
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Distribuição por risco
+            if 'classificacao_risco_contador' in df_contadores.columns:
+                df_risco = df_contadores.groupby('classificacao_risco_contador').size().reset_index(name='qtde')
+
+                fig = px.pie(
+                    df_risco,
+                    values='qtde',
+                    names='classificacao_risco_contador',
+                    title='Distribuição por Nível de Risco',
+                    color='classificacao_risco_contador',
+                    color_discrete_map={
+                        'CRÍTICO': '#c62828',
+                        'ALTO': '#ef6c00',
+                        'MÉDIO': '#fbc02d',
+                        'BAIXO': '#4caf50'
+                    },
+                    hole=0.4,
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            # Top 10 contadores por saldo
+            if 'saldo_credor_total' in df_contadores.columns:
+                df_top10 = df_contadores.nlargest(10, 'saldo_credor_total')
+
+                fig = px.bar(
+                    df_top10,
+                    x='saldo_credor_total',
+                    y='nome_contador' if 'nome_contador' in df_top10.columns else 'cpf_cnpj_contador',
+                    orientation='h',
+                    title='Top 10 Contadores por Saldo Credor',
+                    color='saldo_credor_total',
+                    color_continuous_scale='Reds',
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+                st.plotly_chart(fig, use_container_width=True)
+
+        st.divider()
+
+        # Análise por município do contador
+        st.subheader("📍 Distribuição por Município do Contador")
+
+        if 'municipio_contador' in df_contadores.columns:
+            df_mun = df_contadores.groupby('municipio_contador').agg({
+                'cpf_cnpj_contador': 'count',
+                'saldo_credor_total': 'sum',
+                'qtde_empresas_com_credito': 'sum' if 'qtde_empresas_com_credito' in df_contadores.columns else lambda x: 0
+            }).reset_index()
+            df_mun.columns = ['Município', 'Contadores', 'Saldo Total', 'Empresas com Crédito']
+            df_mun = df_mun.sort_values('Contadores', ascending=False).head(15)
+
+            fig = px.bar(
+                df_mun,
+                x='Contadores',
+                y='Município',
+                orientation='h',
+                title='Top 15 Municípios por Quantidade de Contadores',
+                color='Saldo Total',
+                color_continuous_scale='Blues',
+                template=filtros.get('tema', 'plotly_white')
+            )
+            fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+            st.plotly_chart(fig, use_container_width=True)
+
+    # =========================================================================
+    # TAB 2: RANKING
+    # =========================================================================
+    with tab2:
+        st.subheader("🏆 Ranking de Contadores por Risco")
+
+        # Filtros
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            filtro_risco = st.multiselect(
+                "Filtrar por Risco:",
+                ['CRÍTICO', 'ALTO', 'MÉDIO', 'BAIXO'],
+                default=['CRÍTICO', 'ALTO', 'MÉDIO'] if 'classificacao_risco_contador' in df_contadores.columns else []
+            )
+
+        with col2:
+            min_empresas = st.slider("Mín. Empresas com Crédito:", 1, 50, 1)
+
+        with col3:
+            ordenar_por = st.selectbox(
+                "Ordenar por:",
+                ['ranking_contador', 'saldo_credor_total', 'qtde_empresas_com_credito', 'score_total_contador'],
+                format_func=lambda x: {
+                    'ranking_contador': 'Ranking Geral',
+                    'saldo_credor_total': 'Saldo Credor',
+                    'qtde_empresas_com_credito': 'Qtde Empresas',
+                    'score_total_contador': 'Score Total'
+                }.get(x, x)
+            )
+
+        # Aplicar filtros
+        df_filtrado = df_contadores.copy()
+
+        if filtro_risco and 'classificacao_risco_contador' in df_filtrado.columns:
+            df_filtrado = df_filtrado[df_filtrado['classificacao_risco_contador'].isin(filtro_risco)]
+
+        if 'qtde_empresas_com_credito' in df_filtrado.columns:
+            df_filtrado = df_filtrado[df_filtrado['qtde_empresas_com_credito'] >= min_empresas]
+
+        # Ordenar
+        if ordenar_por in df_filtrado.columns:
+            ascending = (ordenar_por == 'ranking_contador')
+            df_filtrado = df_filtrado.sort_values(ordenar_por, ascending=ascending)
+
+        # KPIs do filtro
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Contadores Filtrados", f"{len(df_filtrado):,}")
+
+        with col2:
+            total_saldo_filt = df_filtrado['saldo_credor_total'].sum() if 'saldo_credor_total' in df_filtrado.columns else 0
+            st.metric("Saldo Total", f"R$ {total_saldo_filt/1e6:.1f}M")
+
+        with col3:
+            media_score = df_filtrado['score_total_contador'].mean() if 'score_total_contador' in df_filtrado.columns else 0
+            st.metric("Score Médio", f"{media_score:.1f}")
+
+        st.divider()
+
+        # Gráfico Top 20
+        df_top20 = df_filtrado.head(20)
+
+        if not df_top20.empty and 'saldo_credor_total' in df_top20.columns:
+            fig = px.bar(
+                df_top20,
+                x='saldo_credor_total',
+                y='nome_contador' if 'nome_contador' in df_top20.columns else 'cpf_cnpj_contador',
+                orientation='h',
+                title='Top 20: Contadores por Saldo Credor',
+                color='classificacao_risco_contador' if 'classificacao_risco_contador' in df_top20.columns else None,
+                color_discrete_map={
+                    'CRÍTICO': '#c62828',
+                    'ALTO': '#ef6c00',
+                    'MÉDIO': '#fbc02d',
+                    'BAIXO': '#4caf50'
+                },
+                template=filtros.get('tema', 'plotly_white')
+            )
+            fig.update_layout(yaxis={'categoryorder': 'total ascending'}, height=600)
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.divider()
+
+        # Tabela completa
+        st.subheader("📋 Lista Completa")
+
+        colunas_display = [
+            'ranking_contador', 'nome_contador', 'crc_contador', 'municipio_contador',
+            'total_empresas_carteira', 'qtde_empresas_com_credito', 'saldo_credor_total',
+            'qtde_risco_critico_12m', 'qtde_risco_alto_12m', 'qtde_empresas_suspeitas',
+            'score_total_contador', 'classificacao_risco_contador'
+        ]
+
+        colunas_existentes = [c for c in colunas_display if c in df_filtrado.columns]
+
+        st.dataframe(
+            df_filtrado[colunas_existentes].style.format({
+                'saldo_credor_total': 'R$ {:,.2f}',
+                'score_total_contador': '{:.1f}'
+            }),
+            use_container_width=True,
+            height=600
+        )
+
+        # Exportar
+        if st.button("📥 Exportar Ranking (CSV)"):
+            csv = df_filtrado[colunas_existentes].to_csv(index=False, encoding='utf-8-sig', sep=';')
+            st.download_button(
+                label="Baixar CSV",
+                data=csv.encode('utf-8-sig'),
+                file_name=f"ranking_contadores_creditos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime='text/csv'
+            )
+
+    # =========================================================================
+    # TAB 3: REFORMA TRIBUTÁRIA
+    # =========================================================================
+    with tab3:
+        st.subheader("📈 Comportamento Pós-Reforma Tributária")
+
+        st.markdown("""
+        <div class='info-box'>
+        <b>Contexto:</b> Com a reforma tributária, empresas podem estar se creditando em preparação
+        para solicitar ressarcimento/compensação. Esta análise identifica contadores com comportamentos
+        suspeitos: muitas empresas novas se creditando ou crescimento acelerado de saldos.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Carregar dados de reforma
+        df_reforma = carregar_contadores_reforma(engine)
+
+        if df_reforma.empty and not df_contadores.empty:
+            # Usar dados do ranking se reforma não disponível
+            df_reforma = df_contadores.copy()
+
+        if not df_reforma.empty:
+            # KPIs de Reforma
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                if 'qtde_novas_creditadoras' in df_reforma.columns:
+                    total_novas = df_reforma['qtde_novas_creditadoras'].sum()
+                    st.metric("🆕 Novas Creditadoras", f"{int(total_novas):,}",
+                              help="Empresas que começaram a se creditar recentemente (não tinham saldo há 60 meses)")
+
+            with col2:
+                if 'qtde_crescimento_alto_12m' in df_reforma.columns:
+                    total_crescimento = df_reforma['qtde_crescimento_alto_12m'].sum()
+                    st.metric("📈 Crescimento Acelerado", f"{int(total_crescimento):,}",
+                              help="Empresas com crescimento de saldo > 100% em 12 meses")
+
+            with col3:
+                if 'classificacao_reforma' in df_reforma.columns:
+                    suspeitos = len(df_reforma[df_reforma['classificacao_reforma'].isin(['MUITO SUSPEITO', 'SUSPEITO'])])
+                else:
+                    suspeitos = 0
+                st.metric("🚨 Contadores Suspeitos", f"{suspeitos:,}",
+                          help="Contadores com comportamento suspeito relacionado à reforma")
+
+            with col4:
+                if 'saldo_novas_creditadoras' in df_reforma.columns:
+                    saldo_novas = df_reforma['saldo_novas_creditadoras'].sum()
+                else:
+                    saldo_novas = 0
+                st.metric("💰 Saldo Novas Cred.", f"R$ {saldo_novas/1e6:.1f}M",
+                          help="Saldo acumulado pelas empresas que começaram a se creditar recentemente")
+
+            st.divider()
+
+            # Gráficos
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if 'classificacao_reforma' in df_reforma.columns:
+                    df_class_reforma = df_reforma.groupby('classificacao_reforma').size().reset_index(name='qtde')
+
+                    fig = px.pie(
+                        df_class_reforma,
+                        values='qtde',
+                        names='classificacao_reforma',
+                        title='Classificação - Comportamento Reforma',
+                        color='classificacao_reforma',
+                        color_discrete_map={
+                            'MUITO SUSPEITO': '#b71c1c',
+                            'SUSPEITO': '#ef6c00',
+                            'ATENÇÃO': '#fbc02d',
+                            'NORMAL': '#4caf50'
+                        },
+                        hole=0.4,
+                        template=filtros.get('tema', 'plotly_white')
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+            with col2:
+                if 'qtde_novas_creditadoras' in df_reforma.columns:
+                    df_top_novas = df_reforma.nlargest(10, 'qtde_novas_creditadoras')
+
+                    fig = px.bar(
+                        df_top_novas,
+                        x='qtde_novas_creditadoras',
+                        y='nome_contador' if 'nome_contador' in df_top_novas.columns else 'cpf_cnpj_contador',
+                        orientation='h',
+                        title='Top 10 - Novas Creditadoras por Contador',
+                        color='qtde_novas_creditadoras',
+                        color_continuous_scale='Oranges',
+                        template=filtros.get('tema', 'plotly_white')
+                    )
+                    fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig, use_container_width=True)
+
+            st.divider()
+
+            # Alertas
+            st.subheader("🚨 Contadores com Comportamento Suspeito")
+
+            if 'classificacao_reforma' in df_reforma.columns:
+                df_suspeitos = df_reforma[df_reforma['classificacao_reforma'].isin(['MUITO SUSPEITO', 'SUSPEITO'])].head(10)
+
+                for _, row in df_suspeitos.iterrows():
+                    classif = row.get('classificacao_reforma', 'N/A')
+                    css_class = 'alert-critico' if classif == 'MUITO SUSPEITO' else 'alert-alto'
+
+                    st.markdown(f"""
+                    <div class='{css_class}'>
+                    <b>{row.get('nome_contador', row.get('cpf_cnpj_contador', 'N/A'))}</b> (CRC: {row.get('crc_contador', 'N/A')})<br>
+                    📁 Carteira: {int(row.get('total_empresas_carteira', 0))} empresas |
+                    🆕 Novas Creditadoras: {int(row.get('qtde_novas_creditadoras', 0))} |
+                    📈 Crescimento Alto: {int(row.get('qtde_crescimento_acelerado', row.get('qtde_crescimento_alto_12m', 0)))}<br>
+                    💰 Saldo Total: R$ {row.get('saldo_credor_total', 0)/1e6:.2f}M |
+                    🏷️ Classificação: <b>{classif}</b>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Classificação de reforma não disponível. Execute o SQL completo.")
+
+            # Tabela de reforma
+            st.subheader("📋 Dados de Comportamento Reforma")
+
+            colunas_reforma = [
+                'ranking_contador', 'nome_contador', 'crc_contador', 'municipio_contador',
+                'total_empresas_carteira', 'qtde_novas_creditadoras', 'saldo_novas_creditadoras',
+                'qtde_crescimento_alto_12m', 'classificacao_reforma'
+            ]
+
+            colunas_existentes_ref = [c for c in colunas_reforma if c in df_reforma.columns]
+
+            if colunas_existentes_ref:
+                st.dataframe(
+                    df_reforma[colunas_existentes_ref].head(100).style.format({
+                        'saldo_novas_creditadoras': 'R$ {:,.2f}'
+                    }),
+                    use_container_width=True,
+                    height=400
+                )
+        else:
+            st.warning("Dados de análise de reforma tributária não disponíveis.")
+
+    # =========================================================================
+    # TAB 4: ANÁLISE INDIVIDUAL
+    # =========================================================================
+    with tab4:
+        st.subheader("🔍 Análise Individual de Contador")
+
+        # Seleção do contador
+        if 'nome_contador' in df_contadores.columns:
+            opcoes = df_contadores[['cpf_cnpj_contador', 'nome_contador', 'saldo_credor_total']].copy()
+            opcoes = opcoes.sort_values('saldo_credor_total', ascending=False)
+
+            def format_contador(x):
+                row = opcoes[opcoes['cpf_cnpj_contador'] == x]
+                if row.empty:
+                    return x
+                nome = row['nome_contador'].iloc[0]
+                saldo = row['saldo_credor_total'].iloc[0]
+                return f"{nome} (R$ {saldo/1e6:.2f}M)"
+
+            contador_selecionado = st.selectbox(
+                "Selecione o Contador:",
+                opcoes['cpf_cnpj_contador'].tolist(),
+                format_func=format_contador
+            )
+        else:
+            contador_selecionado = st.text_input("Digite o CPF/CNPJ do Contador:")
+
+        if st.button("🔍 Carregar Análise", type="primary"):
+            with st.spinner("Carregando dados do contador..."):
+                detalhes = carregar_detalhes_contador(engine, contador_selecionado)
+                st.session_state['detalhes_contador_cred'] = detalhes
+                st.session_state['contador_selecionado_cred'] = contador_selecionado
+
+        # Exibir análise se dados carregados
+        if 'detalhes_contador_cred' in st.session_state:
+            detalhes = st.session_state['detalhes_contador_cred']
+            df_resumo_cont = detalhes.get('resumo', pd.DataFrame())
+            df_empresas = detalhes.get('empresas', pd.DataFrame())
+
+            if not df_resumo_cont.empty:
+                info = df_resumo_cont.iloc[0]
+
+                st.markdown(f"## 📋 {info.get('nome_contador', 'N/A')}")
+                st.caption(f"CPF/CNPJ: {info.get('cpf_cnpj_contador', 'N/A')} | CRC: {info.get('crc_contador', 'N/A')}")
+                st.caption(f"📍 {info.get('municipio_contador', 'N/A')} - {info.get('uf_contador', 'N/A')}")
+
+                # KPIs do contador
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric("📁 Carteira", f"{int(info.get('total_empresas_carteira', 0)):,}")
+                    st.metric("💳 Com Crédito", f"{int(info.get('qtde_empresas_com_credito', 0)):,}")
+
+                with col2:
+                    st.metric("💰 Saldo Total", f"R$ {info.get('saldo_credor_total', 0)/1e6:.2f}M")
+                    st.metric("🔴 Risco Crítico", f"{int(info.get('qtde_risco_critico_12m', 0)):,}")
+
+                with col3:
+                    st.metric("🟠 Risco Alto", f"{int(info.get('qtde_risco_alto_12m', 0)):,}")
+                    st.metric("🚨 Suspeitas", f"{int(info.get('qtde_empresas_suspeitas', 0)):,}")
+
+                with col4:
+                    st.metric("🎯 Score Total", f"{info.get('score_total_contador', 0):.1f}")
+                    classif = info.get('classificacao_risco_contador', 'N/A')
+                    st.metric("📊 Classificação", classif)
+
+                st.divider()
+
+                # Lista de empresas
+                if not df_empresas.empty:
+                    st.subheader(f"🏢 Empresas do Contador ({len(df_empresas)} registros)")
+
+                    colunas_emp = [
+                        'cnpj_empresa', 'razao_social_empresa', 'municipio_empresa',
+                        'saldo_credor_atual', 'classificacao_risco_12m', 'score_risco_12m',
+                        'flag_empresa_suspeita', 'qtde_indicios_fraude'
+                    ]
+
+                    colunas_emp_existentes = [c for c in colunas_emp if c in df_empresas.columns]
+
+                    st.dataframe(
+                        df_empresas[colunas_emp_existentes].style.format({
+                            'saldo_credor_atual': 'R$ {:,.2f}',
+                            'score_risco_12m': '{:.1f}'
+                        }),
+                        use_container_width=True,
+                        height=500
+                    )
+
+                    # Exportar empresas
+                    if st.button("📥 Exportar Empresas do Contador (CSV)"):
+                        csv = df_empresas.to_csv(index=False, encoding='utf-8-sig', sep=';')
+                        st.download_button(
+                            label="Baixar CSV",
+                            data=csv.encode('utf-8-sig'),
+                            file_name=f"empresas_contador_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime='text/csv'
+                        )
+            else:
+                st.warning("Nenhum dado encontrado para este contador.")
+
+
+# =============================================================================
 # 8. FUNÇÃO PRINCIPAL
 # =============================================================================
 
@@ -3399,6 +4125,7 @@ def main():
         "⚠️ Padrões de Abuso",
         "🔍 Empresas Inativas",
         "📊 Reforma Tributária",
+        "📋 Análise por Contador",
         "🏢 Empresas com Noteiras",
         "📋 Declarações Zeradas",
         "🚨 Alertas Automáticos",
@@ -3458,6 +4185,7 @@ def main():
         "⚠️ Padrões de Abuso": pagina_padroes_abuso,
         "🔍 Empresas Inativas": pagina_empresas_inativas,
         "📊 Reforma Tributária": pagina_reforma_tributaria,
+        "📋 Análise por Contador": pagina_analise_contador,
         "🏢 Empresas com Noteiras": pagina_noteiras,
         "📋 Declarações Zeradas": pagina_declaracoes_zeradas,
         "🚨 Alertas Automáticos": pagina_alertas_automaticos,
