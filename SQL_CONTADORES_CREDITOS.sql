@@ -250,8 +250,8 @@ comportamento_regime AS (
         SUM(CASE WHEN flag_simples_nacional = 0 AND saldo_credor_atual > 0 THEN 1 ELSE 0 END) AS regime_normal_com_credito,
         SUM(CASE WHEN flag_simples_nacional = 1 AND saldo_credor_atual > 0 THEN 1 ELSE 0 END) AS simples_com_credito,
         SUM(CASE WHEN flag_simples_nacional = 0 AND crescimento_saldo_percentual_12m > 50 THEN 1 ELSE 0 END) AS regime_normal_crescendo,
-        SUM(saldo_credor_atual) FILTER (WHERE flag_simples_nacional = 0) AS saldo_regime_normal,
-        SUM(saldo_credor_atual) FILTER (WHERE flag_simples_nacional = 1) AS saldo_simples
+        SUM(CASE WHEN flag_simples_nacional = 0 THEN saldo_credor_atual ELSE 0 END) AS saldo_regime_normal,
+        SUM(CASE WHEN flag_simples_nacional = 1 THEN saldo_credor_atual ELSE 0 END) AS saldo_simples
     FROM base
     GROUP BY cpf_cnpj_contador
 ),
