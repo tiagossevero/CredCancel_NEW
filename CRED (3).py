@@ -4506,7 +4506,7 @@ def pagina_analise_contador(dados, filtros):
             df_lorenz = df_sorted_saldo.copy()
             df_lorenz['saldo_acum'] = df_lorenz['saldo_credor_total'].cumsum()
             df_lorenz['perc_saldo_acum'] = df_lorenz['saldo_acum'] / total_saldo_geral * 100
-            df_lorenz['perc_contadores'] = (range(1, len(df_lorenz) + 1)) / len(df_lorenz) * 100
+            df_lorenz['perc_contadores'] = np.arange(1, len(df_lorenz) + 1) / len(df_lorenz) * 100
 
             fig_lorenz = px.line(
                 df_lorenz.head(100),
