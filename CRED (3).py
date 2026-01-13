@@ -3629,7 +3629,7 @@ def pagina_analise_contador(dados, filtros):
         return
 
     # Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Visão Geral", "🏆 Ranking", "📈 Reforma Tributária", "🔍 Análise Individual"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Visão Geral", "🏆 Ranking", "📈 Reforma Tributária", "🔍 Análise Individual", "💰 Subánalise de Créditos"])
 
     # =========================================================================
     # TAB 1: VISÃO GERAL
@@ -4099,6 +4099,796 @@ def pagina_analise_contador(dados, filtros):
                         )
             else:
                 st.warning("Nenhum dado encontrado para este contador.")
+
+    # =========================================================================
+    # TAB 5: SUBÁNALISE DE CRÉDITOS
+    # =========================================================================
+    with tab5:
+        st.subheader("💰 Subánalise Específica de Créditos por Contador")
+
+        st.markdown("""
+        <div class='info-box'>
+        <b>Objetivo:</b> Análise aprofundada dos contadores com foco específico em créditos -
+        proporção de empresas creditadoras, concentração de valores, ticket médio,
+        distribuição de saldos e padrões de acumulação de créditos.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Preparar dados para subánalise
+        df_creditos = df_contadores.copy()
+
+        # Calcular métricas adicionais de créditos se não existirem
+        if 'taxa_empresas_com_credito' not in df_creditos.columns:
+            df_creditos['taxa_empresas_com_credito'] = (
+                df_creditos['qtde_empresas_com_credito'] /
+                df_creditos['total_empresas_carteira'].replace(0, 1) * 100
+            ).round(2)
+
+        if 'ticket_medio_credito' not in df_creditos.columns:
+            df_creditos['ticket_medio_credito'] = (
+                df_creditos['saldo_credor_total'] /
+                df_creditos['qtde_empresas_com_credito'].replace(0, 1)
+            ).round(2)
+
+        if 'saldo_medio_por_empresa_carteira' not in df_creditos.columns:
+            df_creditos['saldo_medio_por_empresa_carteira'] = (
+                df_creditos['saldo_credor_total'] /
+                df_creditos['total_empresas_carteira'].replace(0, 1)
+            ).round(2)
+
+        # Subtabs para organização
+        subtab1, subtab2, subtab3, subtab4 = st.tabs([
+            "📊 Proporção de Créditos",
+            "💵 Análise de Valores",
+            "📈 Concentração",
+            "🎯 Rankings Específicos"
+        ])
+
+        # =====================================================================
+        # SUBTAB 1: PROPORÇÃO DE CRÉDITOS
+        # =====================================================================
+        with subtab1:
+            st.markdown("### 📊 Análise Proporcional de Créditos")
+
+            # KPIs de proporção
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                media_taxa = df_creditos['taxa_empresas_com_credito'].mean()
+                st.metric(
+                    "Taxa Média de Creditadoras",
+                    f"{media_taxa:.1f}%",
+                    help="Média da % de empresas com crédito por contador"
+                )
+
+            with col2:
+                max_taxa = df_creditos['taxa_empresas_com_credito'].max()
+                st.metric(
+                    "Maior Taxa",
+                    f"{max_taxa:.1f}%",
+                    help="Maior proporção de empresas com crédito"
+                )
+
+            with col3:
+                contadores_alta_taxa = len(df_creditos[df_creditos['taxa_empresas_com_credito'] >= 50])
+                st.metric(
+                    "Contadores ≥50% Creditadoras",
+                    f"{contadores_alta_taxa:,}",
+                    help="Contadores onde metade ou mais das empresas têm crédito"
+                )
+
+            with col4:
+                contadores_100 = len(df_creditos[df_creditos['taxa_empresas_com_credito'] == 100])
+                st.metric(
+                    "100% Creditadoras",
+                    f"{contadores_100:,}",
+                    help="Contadores onde TODAS as empresas têm crédito"
+                )
+
+            st.divider()
+
+            # Filtro de proporção
+            col1, col2 = st.columns(2)
+
+            with col1:
+                min_taxa_filtro = st.slider(
+                    "Taxa mínima de empresas com crédito (%):",
+                    0, 100, 30,
+                    help="Filtrar contadores com pelo menos X% de empresas com crédito"
+                )
+
+            with col2:
+                min_empresas_carteira = st.slider(
+                    "Mínimo de empresas na carteira:",
+                    1, 50, 3,
+                    help="Excluir contadores com poucas empresas para evitar distorções"
+                )
+
+            # Aplicar filtros
+            df_prop_filtrado = df_creditos[
+                (df_creditos['taxa_empresas_com_credito'] >= min_taxa_filtro) &
+                (df_creditos['total_empresas_carteira'] >= min_empresas_carteira)
+            ].sort_values('taxa_empresas_com_credito', ascending=False)
+
+            st.info(f"**{len(df_prop_filtrado):,}** contadores com taxa ≥ {min_taxa_filtro}% e carteira ≥ {min_empresas_carteira} empresas")
+
+            # Gráfico de distribuição de taxa
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Histograma de distribuição
+                fig_hist = px.histogram(
+                    df_creditos[df_creditos['total_empresas_carteira'] >= min_empresas_carteira],
+                    x='taxa_empresas_com_credito',
+                    nbins=20,
+                    title='Distribuição da Taxa de Empresas com Crédito',
+                    labels={'taxa_empresas_com_credito': 'Taxa (%)'},
+                    color_discrete_sequence=['#1976d2'],
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                fig_hist.add_vline(x=media_taxa, line_dash="dash", line_color="red",
+                                   annotation_text=f"Média: {media_taxa:.1f}%")
+                st.plotly_chart(fig_hist, use_container_width=True)
+
+            with col2:
+                # Top 15 por proporção
+                df_top_prop = df_prop_filtrado.head(15)
+
+                fig_prop = px.bar(
+                    df_top_prop,
+                    x='taxa_empresas_com_credito',
+                    y='nome_contador' if 'nome_contador' in df_top_prop.columns else 'cpf_cnpj_contador',
+                    orientation='h',
+                    title='Top 15 - Maior Proporção de Creditadoras',
+                    color='saldo_credor_total',
+                    color_continuous_scale='Blues',
+                    labels={'taxa_empresas_com_credito': 'Taxa (%)', 'saldo_credor_total': 'Saldo Total'},
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                fig_prop.update_layout(yaxis={'categoryorder': 'total ascending'}, height=500)
+                st.plotly_chart(fig_prop, use_container_width=True)
+
+            st.divider()
+
+            # Tabela detalhada
+            st.markdown("### 📋 Contadores com Alta Proporção de Creditadoras")
+
+            colunas_prop = [
+                'nome_contador', 'cpf_cnpj_contador', 'crc_contador', 'municipio_contador',
+                'total_empresas_carteira', 'qtde_empresas_com_credito', 'taxa_empresas_com_credito',
+                'saldo_credor_total', 'ticket_medio_credito'
+            ]
+            colunas_prop_exist = [c for c in colunas_prop if c in df_prop_filtrado.columns]
+
+            st.dataframe(
+                df_prop_filtrado[colunas_prop_exist].head(50).style.format({
+                    'taxa_empresas_com_credito': '{:.1f}%',
+                    'saldo_credor_total': 'R$ {:,.2f}',
+                    'ticket_medio_credito': 'R$ {:,.2f}'
+                }).background_gradient(subset=['taxa_empresas_com_credito'], cmap='Reds'),
+                use_container_width=True,
+                height=400
+            )
+
+        # =====================================================================
+        # SUBTAB 2: ANÁLISE DE VALORES
+        # =====================================================================
+        with subtab2:
+            st.markdown("### 💵 Análise de Valores de Créditos")
+
+            # KPIs de valores
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                ticket_medio_geral = df_creditos['ticket_medio_credito'].mean()
+                st.metric(
+                    "Ticket Médio Geral",
+                    f"R$ {ticket_medio_geral/1e3:.1f}K",
+                    help="Média do valor de crédito por empresa"
+                )
+
+            with col2:
+                mediana_ticket = df_creditos['ticket_medio_credito'].median()
+                st.metric(
+                    "Mediana do Ticket",
+                    f"R$ {mediana_ticket/1e3:.1f}K",
+                    help="Valor mediano de crédito por empresa"
+                )
+
+            with col3:
+                max_ticket = df_creditos['ticket_medio_credito'].max()
+                st.metric(
+                    "Maior Ticket Médio",
+                    f"R$ {max_ticket/1e6:.2f}M",
+                    help="Maior ticket médio entre os contadores"
+                )
+
+            with col4:
+                contadores_ticket_alto = len(df_creditos[df_creditos['ticket_medio_credito'] >= 100000])
+                st.metric(
+                    "Ticket ≥ R$100K",
+                    f"{contadores_ticket_alto:,}",
+                    help="Contadores com ticket médio alto"
+                )
+
+            st.divider()
+
+            # Filtros de valores
+            col1, col2 = st.columns(2)
+
+            with col1:
+                min_ticket = st.number_input(
+                    "Ticket médio mínimo (R$):",
+                    min_value=0,
+                    max_value=10000000,
+                    value=50000,
+                    step=10000,
+                    help="Filtrar contadores com ticket médio acima de X"
+                )
+
+            with col2:
+                min_saldo_total = st.number_input(
+                    "Saldo total mínimo (R$):",
+                    min_value=0,
+                    max_value=100000000,
+                    value=100000,
+                    step=50000,
+                    help="Filtrar contadores com saldo total acima de X"
+                )
+
+            # Aplicar filtros
+            df_valores_filtrado = df_creditos[
+                (df_creditos['ticket_medio_credito'] >= min_ticket) &
+                (df_creditos['saldo_credor_total'] >= min_saldo_total)
+            ].sort_values('ticket_medio_credito', ascending=False)
+
+            st.info(f"**{len(df_valores_filtrado):,}** contadores com ticket ≥ R$ {min_ticket:,.0f} e saldo ≥ R$ {min_saldo_total:,.0f}")
+
+            # Gráficos
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Scatter: Ticket médio vs Quantidade de empresas
+                fig_scatter = px.scatter(
+                    df_creditos[df_creditos['qtde_empresas_com_credito'] > 0],
+                    x='qtde_empresas_com_credito',
+                    y='ticket_medio_credito',
+                    size='saldo_credor_total',
+                    color='classificacao_risco_contador' if 'classificacao_risco_contador' in df_creditos.columns else None,
+                    hover_data=['nome_contador'] if 'nome_contador' in df_creditos.columns else None,
+                    title='Ticket Médio vs Quantidade de Empresas',
+                    labels={
+                        'qtde_empresas_com_credito': 'Qtde Empresas',
+                        'ticket_medio_credito': 'Ticket Médio (R$)'
+                    },
+                    color_discrete_map={
+                        'CRÍTICO': '#c62828',
+                        'ALTO': '#ef6c00',
+                        'MÉDIO': '#fbc02d',
+                        'BAIXO': '#4caf50'
+                    },
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                st.plotly_chart(fig_scatter, use_container_width=True)
+
+            with col2:
+                # Top 15 por ticket médio
+                df_top_ticket = df_valores_filtrado.head(15)
+
+                fig_ticket = px.bar(
+                    df_top_ticket,
+                    x='ticket_medio_credito',
+                    y='nome_contador' if 'nome_contador' in df_top_ticket.columns else 'cpf_cnpj_contador',
+                    orientation='h',
+                    title='Top 15 - Maior Ticket Médio',
+                    color='qtde_empresas_com_credito',
+                    color_continuous_scale='Oranges',
+                    labels={'ticket_medio_credito': 'Ticket Médio (R$)', 'qtde_empresas_com_credito': 'Qtde Empresas'},
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                fig_ticket.update_layout(yaxis={'categoryorder': 'total ascending'}, height=500)
+                st.plotly_chart(fig_ticket, use_container_width=True)
+
+            st.divider()
+
+            # Análise de faixas de valores
+            st.markdown("### 📊 Distribuição por Faixas de Ticket Médio")
+
+            # Criar faixas
+            bins_ticket = [0, 10000, 50000, 100000, 500000, 1000000, float('inf')]
+            labels_ticket = ['Até R$10K', 'R$10K-50K', 'R$50K-100K', 'R$100K-500K', 'R$500K-1M', 'Acima R$1M']
+            df_creditos['faixa_ticket'] = pd.cut(
+                df_creditos['ticket_medio_credito'],
+                bins=bins_ticket,
+                labels=labels_ticket
+            )
+
+            df_faixas = df_creditos.groupby('faixa_ticket', observed=True).agg({
+                'cpf_cnpj_contador': 'count',
+                'saldo_credor_total': 'sum',
+                'qtde_empresas_com_credito': 'sum'
+            }).reset_index()
+            df_faixas.columns = ['Faixa', 'Contadores', 'Saldo Total', 'Empresas']
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                fig_faixa_pie = px.pie(
+                    df_faixas,
+                    values='Contadores',
+                    names='Faixa',
+                    title='Distribuição de Contadores por Faixa de Ticket',
+                    hole=0.4,
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                st.plotly_chart(fig_faixa_pie, use_container_width=True)
+
+            with col2:
+                fig_faixa_bar = px.bar(
+                    df_faixas,
+                    x='Faixa',
+                    y='Saldo Total',
+                    title='Saldo Total por Faixa de Ticket',
+                    color='Contadores',
+                    color_continuous_scale='Blues',
+                    template=filtros.get('tema', 'plotly_white')
+                )
+                st.plotly_chart(fig_faixa_bar, use_container_width=True)
+
+            st.dataframe(
+                df_faixas.style.format({
+                    'Saldo Total': 'R$ {:,.2f}',
+                    'Contadores': '{:,}',
+                    'Empresas': '{:,}'
+                }),
+                use_container_width=True
+            )
+
+        # =====================================================================
+        # SUBTAB 3: CONCENTRAÇÃO
+        # =====================================================================
+        with subtab3:
+            st.markdown("### 📈 Análise de Concentração de Créditos")
+
+            # Calcular índices de concentração
+            total_saldo_geral = df_creditos['saldo_credor_total'].sum()
+            total_empresas_geral = df_creditos['qtde_empresas_com_credito'].sum()
+
+            # Top 10, 20, 50 concentração
+            df_sorted_saldo = df_creditos.sort_values('saldo_credor_total', ascending=False)
+
+            top10_saldo = df_sorted_saldo.head(10)['saldo_credor_total'].sum()
+            top20_saldo = df_sorted_saldo.head(20)['saldo_credor_total'].sum()
+            top50_saldo = df_sorted_saldo.head(50)['saldo_credor_total'].sum()
+
+            # KPIs de concentração
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                perc_top10 = (top10_saldo / total_saldo_geral * 100) if total_saldo_geral > 0 else 0
+                st.metric(
+                    "Top 10 Contadores",
+                    f"{perc_top10:.1f}%",
+                    help="% do saldo total concentrado nos 10 maiores"
+                )
+
+            with col2:
+                perc_top20 = (top20_saldo / total_saldo_geral * 100) if total_saldo_geral > 0 else 0
+                st.metric(
+                    "Top 20 Contadores",
+                    f"{perc_top20:.1f}%",
+                    help="% do saldo total concentrado nos 20 maiores"
+                )
+
+            with col3:
+                perc_top50 = (top50_saldo / total_saldo_geral * 100) if total_saldo_geral > 0 else 0
+                st.metric(
+                    "Top 50 Contadores",
+                    f"{perc_top50:.1f}%",
+                    help="% do saldo total concentrado nos 50 maiores"
+                )
+
+            with col4:
+                # Índice Herfindahl simplificado
+                df_creditos['share_saldo'] = df_creditos['saldo_credor_total'] / total_saldo_geral if total_saldo_geral > 0 else 0
+                hhi = (df_creditos['share_saldo'] ** 2).sum() * 10000
+                st.metric(
+                    "Índice HHI",
+                    f"{hhi:.0f}",
+                    help="Índice Herfindahl-Hirschman (concentração). <1500=baixa, 1500-2500=moderada, >2500=alta"
+                )
+
+            st.divider()
+
+            # Curva de Lorenz (concentração)
+            st.markdown("### 📉 Curva de Concentração")
+
+            df_lorenz = df_sorted_saldo.copy()
+            df_lorenz['saldo_acum'] = df_lorenz['saldo_credor_total'].cumsum()
+            df_lorenz['perc_saldo_acum'] = df_lorenz['saldo_acum'] / total_saldo_geral * 100
+            df_lorenz['perc_contadores'] = (range(1, len(df_lorenz) + 1)) / len(df_lorenz) * 100
+
+            fig_lorenz = px.line(
+                df_lorenz.head(100),
+                x='perc_contadores',
+                y='perc_saldo_acum',
+                title='Curva de Concentração de Créditos (Top 100 Contadores)',
+                labels={'perc_contadores': '% dos Contadores', 'perc_saldo_acum': '% do Saldo Acumulado'},
+                template=filtros.get('tema', 'plotly_white')
+            )
+            # Linha de igualdade perfeita
+            fig_lorenz.add_scatter(
+                x=[0, 100], y=[0, 100],
+                mode='lines',
+                line=dict(dash='dash', color='gray'),
+                name='Igualdade Perfeita'
+            )
+            st.plotly_chart(fig_lorenz, use_container_width=True)
+
+            st.divider()
+
+            # Análise de concentração por município
+            st.markdown("### 🗺️ Concentração por Município")
+
+            if 'municipio_contador' in df_creditos.columns:
+                df_mun_conc = df_creditos.groupby('municipio_contador').agg({
+                    'cpf_cnpj_contador': 'count',
+                    'saldo_credor_total': 'sum',
+                    'qtde_empresas_com_credito': 'sum'
+                }).reset_index()
+                df_mun_conc.columns = ['Município', 'Contadores', 'Saldo Total', 'Empresas']
+                df_mun_conc['% do Saldo'] = (df_mun_conc['Saldo Total'] / total_saldo_geral * 100).round(2)
+                df_mun_conc['Ticket Médio Mun'] = (df_mun_conc['Saldo Total'] / df_mun_conc['Empresas'].replace(0, 1)).round(2)
+                df_mun_conc = df_mun_conc.sort_values('Saldo Total', ascending=False)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    fig_mun = px.bar(
+                        df_mun_conc.head(15),
+                        x='Saldo Total',
+                        y='Município',
+                        orientation='h',
+                        title='Top 15 Municípios por Saldo Credor',
+                        color='% do Saldo',
+                        color_continuous_scale='Reds',
+                        template=filtros.get('tema', 'plotly_white')
+                    )
+                    fig_mun.update_layout(yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig_mun, use_container_width=True)
+
+                with col2:
+                    fig_mun_ticket = px.bar(
+                        df_mun_conc.head(15),
+                        x='Ticket Médio Mun',
+                        y='Município',
+                        orientation='h',
+                        title='Top 15 Municípios por Ticket Médio',
+                        color='Contadores',
+                        color_continuous_scale='Blues',
+                        template=filtros.get('tema', 'plotly_white')
+                    )
+                    fig_mun_ticket.update_layout(yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig_mun_ticket, use_container_width=True)
+
+                st.dataframe(
+                    df_mun_conc.head(20).style.format({
+                        'Saldo Total': 'R$ {:,.2f}',
+                        '% do Saldo': '{:.2f}%',
+                        'Ticket Médio Mun': 'R$ {:,.2f}'
+                    }),
+                    use_container_width=True
+                )
+
+        # =====================================================================
+        # SUBTAB 4: RANKINGS ESPECÍFICOS
+        # =====================================================================
+        with subtab4:
+            st.markdown("### 🎯 Rankings Específicos de Créditos")
+
+            # Seletor de ranking
+            tipo_ranking = st.selectbox(
+                "Selecione o tipo de ranking:",
+                [
+                    "Maior proporção + Alto saldo",
+                    "Maior ticket médio + Múltiplas empresas",
+                    "Alta concentração em poucas empresas",
+                    "Crescimento agressivo de créditos",
+                    "Combinação de alertas"
+                ]
+            )
+
+            st.divider()
+
+            if tipo_ranking == "Maior proporção + Alto saldo":
+                st.markdown("#### 🔴 Contadores com Alta Proporção E Alto Saldo")
+                st.caption("Contadores onde ≥50% das empresas têm crédito E saldo total ≥ R$ 500K")
+
+                df_rank1 = df_creditos[
+                    (df_creditos['taxa_empresas_com_credito'] >= 50) &
+                    (df_creditos['saldo_credor_total'] >= 500000)
+                ].sort_values(['taxa_empresas_com_credito', 'saldo_credor_total'], ascending=[False, False])
+
+                if not df_rank1.empty:
+                    # Score combinado
+                    df_rank1['score_proporcao_saldo'] = (
+                        df_rank1['taxa_empresas_com_credito'] * 0.4 +
+                        (df_rank1['saldo_credor_total'] / df_rank1['saldo_credor_total'].max() * 100) * 0.6
+                    ).round(2)
+                    df_rank1 = df_rank1.sort_values('score_proporcao_saldo', ascending=False)
+
+                    col1, col2 = st.columns([1, 2])
+
+                    with col1:
+                        st.metric("Total Identificados", f"{len(df_rank1):,}")
+                        st.metric("Saldo Concentrado", f"R$ {df_rank1['saldo_credor_total'].sum()/1e6:.1f}M")
+
+                    with col2:
+                        fig_r1 = px.scatter(
+                            df_rank1.head(50),
+                            x='taxa_empresas_com_credito',
+                            y='saldo_credor_total',
+                            size='qtde_empresas_com_credito',
+                            hover_data=['nome_contador'] if 'nome_contador' in df_rank1.columns else None,
+                            title='Proporção vs Saldo (Top 50)',
+                            labels={'taxa_empresas_com_credito': 'Taxa (%)', 'saldo_credor_total': 'Saldo Total'},
+                            template=filtros.get('tema', 'plotly_white')
+                        )
+                        st.plotly_chart(fig_r1, use_container_width=True)
+
+                    colunas_r1 = ['nome_contador', 'municipio_contador', 'total_empresas_carteira',
+                                  'qtde_empresas_com_credito', 'taxa_empresas_com_credito',
+                                  'saldo_credor_total', 'score_proporcao_saldo']
+                    colunas_r1_exist = [c for c in colunas_r1 if c in df_rank1.columns]
+
+                    st.dataframe(
+                        df_rank1[colunas_r1_exist].head(30).style.format({
+                            'taxa_empresas_com_credito': '{:.1f}%',
+                            'saldo_credor_total': 'R$ {:,.2f}',
+                            'score_proporcao_saldo': '{:.2f}'
+                        }).background_gradient(subset=['score_proporcao_saldo'], cmap='Reds'),
+                        use_container_width=True,
+                        height=400
+                    )
+                else:
+                    st.info("Nenhum contador encontrado com esses critérios.")
+
+            elif tipo_ranking == "Maior ticket médio + Múltiplas empresas":
+                st.markdown("#### 🟠 Contadores com Ticket Médio Alto E Múltiplas Empresas")
+                st.caption("Ticket médio ≥ R$ 100K com pelo menos 5 empresas creditadoras")
+
+                df_rank2 = df_creditos[
+                    (df_creditos['ticket_medio_credito'] >= 100000) &
+                    (df_creditos['qtde_empresas_com_credito'] >= 5)
+                ].sort_values('ticket_medio_credito', ascending=False)
+
+                if not df_rank2.empty:
+                    col1, col2 = st.columns([1, 2])
+
+                    with col1:
+                        st.metric("Total Identificados", f"{len(df_rank2):,}")
+                        st.metric("Ticket Médio do Grupo", f"R$ {df_rank2['ticket_medio_credito'].mean()/1e3:.1f}K")
+
+                    with col2:
+                        fig_r2 = px.bar(
+                            df_rank2.head(15),
+                            x='ticket_medio_credito',
+                            y='nome_contador' if 'nome_contador' in df_rank2.columns else 'cpf_cnpj_contador',
+                            orientation='h',
+                            color='qtde_empresas_com_credito',
+                            title='Top 15 - Alto Ticket + Múltiplas Empresas',
+                            template=filtros.get('tema', 'plotly_white')
+                        )
+                        fig_r2.update_layout(yaxis={'categoryorder': 'total ascending'})
+                        st.plotly_chart(fig_r2, use_container_width=True)
+
+                    colunas_r2 = ['nome_contador', 'municipio_contador', 'qtde_empresas_com_credito',
+                                  'ticket_medio_credito', 'saldo_credor_total']
+                    colunas_r2_exist = [c for c in colunas_r2 if c in df_rank2.columns]
+
+                    st.dataframe(
+                        df_rank2[colunas_r2_exist].head(30).style.format({
+                            'ticket_medio_credito': 'R$ {:,.2f}',
+                            'saldo_credor_total': 'R$ {:,.2f}'
+                        }),
+                        use_container_width=True,
+                        height=400
+                    )
+                else:
+                    st.info("Nenhum contador encontrado com esses critérios.")
+
+            elif tipo_ranking == "Alta concentração em poucas empresas":
+                st.markdown("#### 🟡 Contadores com Alta Concentração em Poucas Empresas")
+                st.caption("Saldo ≥ R$ 1M concentrado em até 3 empresas")
+
+                df_rank3 = df_creditos[
+                    (df_creditos['saldo_credor_total'] >= 1000000) &
+                    (df_creditos['qtde_empresas_com_credito'] <= 3) &
+                    (df_creditos['qtde_empresas_com_credito'] >= 1)
+                ].sort_values('saldo_credor_total', ascending=False)
+
+                if not df_rank3.empty:
+                    col1, col2 = st.columns([1, 2])
+
+                    with col1:
+                        st.metric("Total Identificados", f"{len(df_rank3):,}")
+                        st.metric("Saldo Concentrado", f"R$ {df_rank3['saldo_credor_total'].sum()/1e6:.1f}M")
+
+                    with col2:
+                        fig_r3 = px.bar(
+                            df_rank3.head(15),
+                            x='saldo_credor_total',
+                            y='nome_contador' if 'nome_contador' in df_rank3.columns else 'cpf_cnpj_contador',
+                            orientation='h',
+                            color='qtde_empresas_com_credito',
+                            title='Top 15 - Alta Concentração em Poucas Empresas',
+                            color_continuous_scale='Oranges',
+                            template=filtros.get('tema', 'plotly_white')
+                        )
+                        fig_r3.update_layout(yaxis={'categoryorder': 'total ascending'})
+                        st.plotly_chart(fig_r3, use_container_width=True)
+
+                    colunas_r3 = ['nome_contador', 'municipio_contador', 'qtde_empresas_com_credito',
+                                  'saldo_credor_total', 'ticket_medio_credito']
+                    colunas_r3_exist = [c for c in colunas_r3 if c in df_rank3.columns]
+
+                    st.dataframe(
+                        df_rank3[colunas_r3_exist].head(30).style.format({
+                            'saldo_credor_total': 'R$ {:,.2f}',
+                            'ticket_medio_credito': 'R$ {:,.2f}'
+                        }),
+                        use_container_width=True,
+                        height=400
+                    )
+                else:
+                    st.info("Nenhum contador encontrado com esses critérios.")
+
+            elif tipo_ranking == "Crescimento agressivo de créditos":
+                st.markdown("#### 🔵 Contadores com Crescimento Agressivo de Créditos")
+                st.caption("Muitas novas creditadoras ou alto crescimento percentual")
+
+                # Verificar colunas disponíveis
+                if 'qtde_novas_creditadoras' in df_creditos.columns or 'qtde_crescimento_alto_12m' in df_creditos.columns:
+                    cond_novas = df_creditos.get('qtde_novas_creditadoras', pd.Series([0]*len(df_creditos))) >= 3
+                    cond_cresc = df_creditos.get('qtde_crescimento_alto_12m', pd.Series([0]*len(df_creditos))) >= 2
+
+                    df_rank4 = df_creditos[cond_novas | cond_cresc].copy()
+
+                    if 'qtde_novas_creditadoras' in df_rank4.columns:
+                        df_rank4 = df_rank4.sort_values('qtde_novas_creditadoras', ascending=False)
+
+                    if not df_rank4.empty:
+                        col1, col2 = st.columns([1, 2])
+
+                        with col1:
+                            st.metric("Total Identificados", f"{len(df_rank4):,}")
+                            if 'qtde_novas_creditadoras' in df_rank4.columns:
+                                st.metric("Total Novas Creditadoras", f"{int(df_rank4['qtde_novas_creditadoras'].sum()):,}")
+
+                        with col2:
+                            if 'qtde_novas_creditadoras' in df_rank4.columns:
+                                fig_r4 = px.bar(
+                                    df_rank4.head(15),
+                                    x='qtde_novas_creditadoras',
+                                    y='nome_contador' if 'nome_contador' in df_rank4.columns else 'cpf_cnpj_contador',
+                                    orientation='h',
+                                    color='saldo_credor_total',
+                                    title='Top 15 - Crescimento Agressivo',
+                                    template=filtros.get('tema', 'plotly_white')
+                                )
+                                fig_r4.update_layout(yaxis={'categoryorder': 'total ascending'})
+                                st.plotly_chart(fig_r4, use_container_width=True)
+
+                        colunas_r4 = ['nome_contador', 'municipio_contador', 'qtde_novas_creditadoras',
+                                      'qtde_crescimento_alto_12m', 'saldo_credor_total']
+                        colunas_r4_exist = [c for c in colunas_r4 if c in df_rank4.columns]
+
+                        st.dataframe(
+                            df_rank4[colunas_r4_exist].head(30).style.format({
+                                'saldo_credor_total': 'R$ {:,.2f}'
+                            }),
+                            use_container_width=True,
+                            height=400
+                        )
+                    else:
+                        st.info("Nenhum contador encontrado com esses critérios.")
+                else:
+                    st.warning("Colunas de crescimento não disponíveis. Execute o SQL de reforma tributária.")
+
+            elif tipo_ranking == "Combinação de alertas":
+                st.markdown("#### 🚨 Contadores com Múltiplos Alertas de Crédito")
+                st.caption("Combinação de indicadores suspeitos relacionados a créditos")
+
+                # Criar score de alertas
+                df_alertas = df_creditos.copy()
+
+                df_alertas['alerta_alta_proporcao'] = (df_alertas['taxa_empresas_com_credito'] >= 60).astype(int)
+                df_alertas['alerta_ticket_alto'] = (df_alertas['ticket_medio_credito'] >= 200000).astype(int)
+                df_alertas['alerta_saldo_elevado'] = (df_alertas['saldo_credor_total'] >= 1000000).astype(int)
+
+                if 'qtde_empresas_suspeitas' in df_alertas.columns:
+                    df_alertas['alerta_suspeitas'] = (df_alertas['qtde_empresas_suspeitas'] >= 2).astype(int)
+                else:
+                    df_alertas['alerta_suspeitas'] = 0
+
+                if 'classificacao_risco_contador' in df_alertas.columns:
+                    df_alertas['alerta_risco'] = df_alertas['classificacao_risco_contador'].isin(['CRÍTICO', 'ALTO']).astype(int)
+                else:
+                    df_alertas['alerta_risco'] = 0
+
+                df_alertas['total_alertas'] = (
+                    df_alertas['alerta_alta_proporcao'] +
+                    df_alertas['alerta_ticket_alto'] +
+                    df_alertas['alerta_saldo_elevado'] +
+                    df_alertas['alerta_suspeitas'] +
+                    df_alertas['alerta_risco']
+                )
+
+                df_rank5 = df_alertas[df_alertas['total_alertas'] >= 3].sort_values('total_alertas', ascending=False)
+
+                if not df_rank5.empty:
+                    col1, col2 = st.columns([1, 2])
+
+                    with col1:
+                        st.metric("Total com ≥3 Alertas", f"{len(df_rank5):,}")
+                        st.metric("Com 5 Alertas", f"{len(df_rank5[df_rank5['total_alertas'] == 5]):,}")
+                        st.metric("Saldo Total", f"R$ {df_rank5['saldo_credor_total'].sum()/1e6:.1f}M")
+
+                    with col2:
+                        df_alertas_dist = df_rank5['total_alertas'].value_counts().reset_index()
+                        df_alertas_dist.columns = ['Alertas', 'Contadores']
+
+                        fig_r5 = px.bar(
+                            df_alertas_dist,
+                            x='Alertas',
+                            y='Contadores',
+                            title='Distribuição por Quantidade de Alertas',
+                            color='Alertas',
+                            color_continuous_scale='Reds',
+                            template=filtros.get('tema', 'plotly_white')
+                        )
+                        st.plotly_chart(fig_r5, use_container_width=True)
+
+                    st.markdown("**Legenda dos Alertas:**")
+                    st.markdown("""
+                    - **Alta Proporção**: ≥60% das empresas com crédito
+                    - **Ticket Alto**: Ticket médio ≥ R$ 200K
+                    - **Saldo Elevado**: Saldo total ≥ R$ 1M
+                    - **Suspeitas**: ≥2 empresas suspeitas
+                    - **Risco**: Classificação CRÍTICO ou ALTO
+                    """)
+
+                    colunas_r5 = ['nome_contador', 'municipio_contador', 'total_alertas',
+                                  'alerta_alta_proporcao', 'alerta_ticket_alto', 'alerta_saldo_elevado',
+                                  'alerta_suspeitas', 'alerta_risco', 'saldo_credor_total']
+                    colunas_r5_exist = [c for c in colunas_r5 if c in df_rank5.columns]
+
+                    st.dataframe(
+                        df_rank5[colunas_r5_exist].head(30).style.format({
+                            'saldo_credor_total': 'R$ {:,.2f}'
+                        }).background_gradient(subset=['total_alertas'], cmap='Reds'),
+                        use_container_width=True,
+                        height=400
+                    )
+                else:
+                    st.info("Nenhum contador encontrado com 3 ou mais alertas.")
+
+            st.divider()
+
+            # Exportação
+            st.markdown("### 📥 Exportar Análise")
+
+            if st.button("📥 Exportar Subánalise Completa (CSV)", key="export_subanalise"):
+                # Preparar dataframe completo
+                df_export = df_creditos.copy()
+
+                csv = df_export.to_csv(index=False, encoding='utf-8-sig', sep=';')
+                st.download_button(
+                    label="Baixar CSV Completo",
+                    data=csv.encode('utf-8-sig'),
+                    file_name=f"subanalise_creditos_contadores_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime='text/csv'
+                )
 
 
 # =============================================================================
